@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:SyncOne.ViewModels"
+             xmlns:models="clr-namespace:SyncOne.Models"
+             x:Class="SyncOne.Views.ConfigurationPage"
+             x:DataType="viewmodels:ConfigurationViewModel">
+    
+    <ScrollView>
+        <VerticalStackLayout Padding="20">
+            <!-- API Configuration -->
+            <Frame Margin="0,0,0,20">
+                <VerticalStackLayout>
+                    <Label Text="API Configuration" FontSize="Large" Margin="0,0,0,10"/>
+                    <Entry Text="{Binding Config.ApiUrl}" 
+                           Placeholder="Enter API URL"/>
+                    <Button Text="Save Configuration" 
+                            Command="{Binding SaveConfigCommand}"
+                            Margin="0,10,0,0"/>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Filter Settings -->
+            <Frame Margin="0,0,0,20">
+                <VerticalStackLayout>
+                    <Label Text="Filter Settings" FontSize="Large" Margin="0,0,0,10"/>
+                    <HorizontalStackLayout>
+                        <CheckBox IsChecked="{Binding Config.UseAllowlist}"/>
+                        <Label Text="Use Allowlist" 
+                               VerticalTextAlignment="Center"/>
+                    </HorizontalStackLayout>
+                    <HorizontalStackLayout>
+                        <CheckBox IsChecked="{Binding Config.UseBlocklist}"/>
+                        <Label Text="Use Blocklist" 
+                               VerticalTextAlignment="Center"/>
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Number Management -->
+            <Frame>
+                <VerticalStackLayout>
+                    <Label Text="Number Management" FontSize="Large" Margin="0,0,0,10"/>
+
+                    <!-- Add New Number -->
+                    <Entry Text="{Binding NewPhoneNumber}" 
+                           Placeholder="Enter phone number"/>
+                    <HorizontalStackLayout Margin="0,10">
+                        <Button Text="Add to Allowlist" 
+                                Command="{Binding AddAllowedNumberCommand}"
+                                Margin="0,0,10,0"/>
+                        <Button Text="Add to Blocklist" 
+                                Command="{Binding AddBlockedNumberCommand}"/>
+                    </HorizontalStackLayout>
+
+                    <!-- Allowed Numbers -->
+                    <Label Text="Allowed Numbers" FontAttributes="Bold" Margin="0,20,0,10"/>
+                    <CollectionView ItemsSource="{Binding AllowedNumbers}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:PhoneNumberFilter">
+                                <SwipeView>
+                                    <SwipeView.RightItems>
+                                        <SwipeItems>
+                                            <SwipeItem Text="Delete"
+                                                       BackgroundColor="Red"
+                                                       Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
+                                                       CommandParameter="{Binding .}"/>
+                                        </SwipeItems>
+                                    </SwipeView.RightItems>
+                                    <Grid Padding="10">
+                                        <Label Text="{Binding PhoneNumber}"/>
+                                    </Grid>
+                                </SwipeView>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <!-- Blocked Numbers -->
+                    <Label Text="Blocked Numbers" FontAttributes="Bold" Margin="0,20,0,10"/>
+                    <CollectionView ItemsSource="{Binding BlockedNumbers}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:PhoneNumberFilter">
+                                <SwipeView>
+                                    <SwipeView.RightItems>
+                                        <SwipeItems>
+                                            <SwipeItem Text="Delete"
+                                                       BackgroundColor="Red"
+                                                       Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
+                                                       CommandParameter="{Binding .}"/>
+                                        </SwipeItems>
+                                    </SwipeView.RightItems>
+                                    <Grid Padding="10">
+                                        <Label Text="{Binding PhoneNumber}"/>
+                                    </Grid>
+                                </SwipeView>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>
