@@ -7,35 +7,36 @@ using System.Threading.Tasks;
 using SyncOne.Models;
 using SmsMessage = SyncOne.Models.SmsMessage;
 
-namespace SyncOne.Services
+public class DatabaseService
 {
-    public class DatabaseService
+    private SQLiteAsyncConnection _database;
+    private readonly string _databasePath;
+
+    public DatabaseService()
     {
-        private SQLiteAsyncConnection _database;
-        public DatabaseService(SQLiteAsyncConnection database)
-        {
-            _database = database;
-        }
-        public async Task InitializeAsync()
-        {
-            if (_database != null) return;
+        _databasePath = Path.Combine(FileSystem.AppDataDirectory, "SyncOne.db");
+    }
 
-            var databasePath = Path.Combine(FileSystem.AppDataDirectory, "SyncOne.db");
-            _database = new SQLiteAsyncConnection(databasePath);
-            await _database.CreateTableAsync<SmsMessage>();
-        }
+    public async Task InitializeAsync()
+    {
+        if (_database != null) return;
 
-        public async Task<List<SmsMessage>> GetMessagesAsync()
-        {
-            return await _database.Table<SmsMessage>().ToListAsync();
-        }
+        _database = new SQLiteAsyncConnection(_databasePath);
+        await _database.CreateTableAsync<SmsMessage>();
+    }
 
-        public async Task SaveMessageAsync(SmsMessage message)
-        {
-            if (message.Id == 0)
-                await _database.InsertAsync(message);
-            else
-                await _database.UpdateAsync(message);
-        }
+    public async Task<List<SmsMessage>> GetMessagesAsync()
+    {
+        await InitializeAsync(); // Ensure database is initialized
+        return await _database.Table<SmsMessage>().ToListAsync();
+    }
+
+    public async Task SaveMessageAsync(SmsMessage message)
+    {
+        await InitializeAsync(); // Ensure database is initialized
+        if (message.Id == 0)
+            await _database.InsertAsync(message);
+        else
+            await _database.UpdateAsync(message);
     }
 }

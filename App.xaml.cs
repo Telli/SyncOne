@@ -9,12 +9,16 @@
             InitializeComponent();
             _serviceProvider = serviceProvider;
 
-            // Set MainPage immediately
+            // Get the main page and create navigation page with styling
             var mainPage = _serviceProvider.GetRequiredService<MainPage>();
-            MainPage = new NavigationPage(mainPage);
+            MainPage = new NavigationPage(mainPage)
+            {
+                BarBackgroundColor = Colors.Purple, // Match your UI
+                BarTextColor = Colors.White
+            };
 
-            // Then initialize async stuff
-            Task.Run(async () =>
+            // Initialize async stuff
+            MainThread.BeginInvokeOnMainThread(async () =>
             {
                 await InitializeAsync();
             });
@@ -30,7 +34,16 @@
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Initialization error: {ex.Message}");
-                // Handle initialization error appropriately
+
+                // Show error to user on main thread
+                await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    await Current.MainPage.DisplayAlert(
+                        "Initialization Error",
+                        "There was a problem starting the application. Please try again.",
+                        "OK"
+                    );
+                });
             }
         }
     }

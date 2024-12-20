@@ -22,7 +22,7 @@ namespace SyncOne.Services
 
         public async Task InitializeAsync()
         {
-            await _database.CreateTableAsync<AppSettings>();
+            
             await _database.CreateTableAsync<SyncEndpoint>();
             await _database.CreateTableAsync<KeywordFilter>();
             await _database.CreateTableAsync<ScheduledTask>();

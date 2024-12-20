@@ -4,100 +4,194 @@
              xmlns:viewmodels="clr-namespace:SyncOne.ViewModels"
              xmlns:models="clr-namespace:SyncOne.Models"
              x:Class="SyncOne.Views.ConfigurationPage"
-             x:DataType="viewmodels:ConfigurationViewModel">
-    
-    <ScrollView>
-        <VerticalStackLayout Padding="20">
-            <!-- API Configuration -->
-            <Frame Margin="0,0,0,20">
-                <VerticalStackLayout>
-                    <Label Text="API Configuration" FontSize="Large" Margin="0,0,0,10"/>
-                    <Entry Text="{Binding Config.ApiUrl}" 
-                           Placeholder="Enter API URL"/>
-                    <Button Text="Save Configuration" 
-                            Command="{Binding SaveConfigCommand}"
-                            Margin="0,10,0,0"/>
-                </VerticalStackLayout>
-            </Frame>
+             x:DataType="viewmodels:ConfigurationViewModel"
+             Title="Configuration">
 
-            <!-- Filter Settings -->
-            <Frame Margin="0,0,0,20">
-                <VerticalStackLayout>
-                    <Label Text="Filter Settings" FontSize="Large" Margin="0,0,0,10"/>
-                    <HorizontalStackLayout>
-                        <CheckBox IsChecked="{Binding Config.UseAllowlist}"/>
-                        <Label Text="Use Allowlist" 
-                               VerticalTextAlignment="Center"/>
-                    </HorizontalStackLayout>
-                    <HorizontalStackLayout>
-                        <CheckBox IsChecked="{Binding Config.UseBlocklist}"/>
-                        <Label Text="Use Blocklist" 
-                               VerticalTextAlignment="Center"/>
-                    </HorizontalStackLayout>
-                </VerticalStackLayout>
-            </Frame>
+    <ContentPage.Resources>
+        <Style x:Key="ValidationMessageStyle" TargetType="Label">
+            <Setter Property="TextColor" Value="Red"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="4,0,0,0"/>
+        </Style>
+    </ContentPage.Resources>
 
-            <!-- Number Management -->
-            <Frame>
-                <VerticalStackLayout>
-                    <Label Text="Number Management" FontSize="Large" Margin="0,0,0,10"/>
+    <Grid>
+        <!-- Main Content -->
+        <ScrollView>
+            <VerticalStackLayout Spacing="16" Padding="16">
+                <!-- API Configuration Card -->
+                <Border StrokeShape="RoundRectangle 8"
+                        Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray900}}"
+                        Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="API Configuration" 
+                               FontSize="20" 
+                               FontAttributes="Bold"/>
 
-                    <!-- Add New Number -->
-                    <Entry Text="{Binding NewPhoneNumber}" 
-                           Placeholder="Enter phone number"/>
-                    <HorizontalStackLayout Margin="0,10">
-                        <Button Text="Add to Allowlist" 
-                                Command="{Binding AddAllowedNumberCommand}"
-                                Margin="0,0,10,0"/>
-                        <Button Text="Add to Blocklist" 
-                                Command="{Binding AddBlockedNumberCommand}"/>
-                    </HorizontalStackLayout>
+                        <Border StrokeShape="RoundRectangle 6"
+                                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
+                                Padding="12,8">
+                            <Entry Text="{Binding Config.ApiUrl}" 
+                                   Placeholder="Enter API URL"
+                                   PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray600}}"
+                                   BackgroundColor="Transparent"/>
+                        </Border>
 
-                    <!-- Allowed Numbers -->
-                    <Label Text="Allowed Numbers" FontAttributes="Bold" Margin="0,20,0,10"/>
-                    <CollectionView ItemsSource="{Binding AllowedNumbers}">
-                        <CollectionView.ItemTemplate>
-                            <DataTemplate x:DataType="models:PhoneNumberFilter">
-                                <SwipeView>
-                                    <SwipeView.RightItems>
-                                        <SwipeItems>
-                                            <SwipeItem Text="Delete"
-                                                       BackgroundColor="Red"
-                                                       Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
-                                                       CommandParameter="{Binding .}"/>
-                                        </SwipeItems>
-                                    </SwipeView.RightItems>
-                                    <Grid Padding="10">
-                                        <Label Text="{Binding PhoneNumber}"/>
-                                    </Grid>
-                                </SwipeView>
-                            </DataTemplate>
-                        </CollectionView.ItemTemplate>
-                    </CollectionView>
+                        <Label Text="{Binding ApiUrlError}"
+                               IsVisible="{Binding HasApiUrlError}"
+                               Style="{StaticResource ValidationMessageStyle}"/>
 
-                    <!-- Blocked Numbers -->
-                    <Label Text="Blocked Numbers" FontAttributes="Bold" Margin="0,20,0,10"/>
-                    <CollectionView ItemsSource="{Binding BlockedNumbers}">
-                        <CollectionView.ItemTemplate>
-                            <DataTemplate x:DataType="models:PhoneNumberFilter">
-                                <SwipeView>
-                                    <SwipeView.RightItems>
-                                        <SwipeItems>
-                                            <SwipeItem Text="Delete"
-                                                       BackgroundColor="Red"
-                                                       Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
-                                                       CommandParameter="{Binding .}"/>
-                                        </SwipeItems>
-                                    </SwipeView.RightItems>
-                                    <Grid Padding="10">
-                                        <Label Text="{Binding PhoneNumber}"/>
-                                    </Grid>
-                                </SwipeView>
-                            </DataTemplate>
-                        </CollectionView.ItemTemplate>
-                    </CollectionView>
-                </VerticalStackLayout>
-            </Frame>
-        </VerticalStackLayout>
-    </ScrollView>
+                        <Button Text="Save Configuration" 
+                                Command="{Binding SaveConfigCommand}"
+                                BackgroundColor="{StaticResource Primary}"
+                                TextColor="White"
+                                HeightRequest="44"
+                                CornerRadius="8">
+                            <Button.Triggers>
+                                <DataTrigger TargetType="Button"
+                                            Binding="{Binding IsSaving}"
+                                            Value="True">
+                                    <Setter Property="IsEnabled" Value="False"/>
+                                </DataTrigger>
+                            </Button.Triggers>
+                        </Button>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Number Management Card -->
+                <Border StrokeShape="RoundRectangle 8"
+                        Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray900}}"
+                        Padding="16">
+                    <VerticalStackLayout Spacing="16">
+                        <Label Text="Number Management" 
+                               FontSize="20" 
+                               FontAttributes="Bold"/>
+
+                        <!-- Add New Number Section -->
+                        <VerticalStackLayout Spacing="4">
+                            <Border StrokeShape="RoundRectangle 6"
+                                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
+                                    Padding="12,8">
+                                <Entry Text="{Binding NewPhoneNumber}" 
+                                       Placeholder="Enter phone number"
+                                       PlaceholderColor="{AppThemeBinding Light={StaticResource Gray400}, Dark={StaticResource Gray600}}"
+                                       BackgroundColor="Transparent"
+                                       Keyboard="Telephone"/>
+                            </Border>
+
+                            <Label Text="{Binding PhoneNumberError}"
+                                   IsVisible="{Binding HasPhoneNumberError}"
+                                   Style="{StaticResource ValidationMessageStyle}"/>
+                        </VerticalStackLayout>
+
+                        <HorizontalStackLayout Spacing="8">
+                            <Button Text="Add to Allowlist" 
+                                    Command="{Binding AddAllowedNumberCommand}"
+                                    BackgroundColor="{StaticResource Primary}"
+                                    TextColor="White"
+                                    HeightRequest="44"
+                                    HorizontalOptions="FillAndExpand"
+                                    CornerRadius="8">
+                                <Button.Triggers>
+                                    <DataTrigger TargetType="Button"
+                                                Binding="{Binding IsAddingNumber}"
+                                                Value="True">
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                    </DataTrigger>
+                                </Button.Triggers>
+                            </Button>
+                            <Button Text="Add to Blocklist" 
+                                    Command="{Binding AddBlockedNumberCommand}"
+                                    BackgroundColor="{StaticResource Secondary}"
+                                    TextColor="White"
+                                    HeightRequest="44"
+                                    HorizontalOptions="FillAndExpand"
+                                    CornerRadius="8">
+                                <Button.Triggers>
+                                    <DataTrigger TargetType="Button"
+                                                Binding="{Binding IsAddingNumber}"
+                                                Value="True">
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                    </DataTrigger>
+                                </Button.Triggers>
+                            </Button>
+                        </HorizontalStackLayout>
+
+                        <!-- Allowed Numbers List -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Allowed Numbers" 
+                               FontSize="16" 
+                               FontAttributes="Bold"/>
+                            <CollectionView ItemsSource="{Binding AllowedNumbers}"
+                                      EmptyView="No allowed numbers added">
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:PhoneNumberFilter">
+                                        <SwipeView>
+                                            <SwipeView.RightItems>
+                                                <SwipeItems>
+                                                    <SwipeItem Text="Delete"
+                                                           BackgroundColor="Red"
+                                                           Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
+                                                           CommandParameter="{Binding .}"/>
+                                                </SwipeItems>
+                                            </SwipeView.RightItems>
+                                            <Border StrokeShape="RoundRectangle 6"
+                                                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
+                                                Margin="0,4"
+                                                Padding="12,8">
+                                                <Label Text="{Binding PhoneNumber}"
+                                                   VerticalOptions="Center"/>
+                                            </Border>
+                                        </SwipeView>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+
+                        <!-- Blocked Numbers List -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Blocked Numbers" 
+                               FontSize="16" 
+                               FontAttributes="Bold"/>
+                            <CollectionView ItemsSource="{Binding BlockedNumbers}"
+                                      EmptyView="No blocked numbers added">
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:PhoneNumberFilter">
+                                        <SwipeView>
+                                            <SwipeView.RightItems>
+                                                <SwipeItems>
+                                                    <SwipeItem Text="Delete"
+                                                           BackgroundColor="Red"
+                                                           Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
+                                                           CommandParameter="{Binding .}"/>
+                                                </SwipeItems>
+                                            </SwipeView.RightItems>
+                                            <Border StrokeShape="RoundRectangle 6"
+                                                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
+                                                Margin="0,4"
+                                                Padding="12,8">
+                                                <Label Text="{Binding PhoneNumber}"
+                                                   VerticalOptions="Center"/>
+                                            </Border>
+                                        </SwipeView>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Loading Overlay -->
+        <Grid IsVisible="{Binding IsLoading}"
+              BackgroundColor="#80000000">
+            <ActivityIndicator IsRunning="{Binding IsLoading}"
+                             HorizontalOptions="Center"
+                             VerticalOptions="Center"
+                             Color="{StaticResource Primary}"/>
+        </Grid>
+    </Grid>
 </ContentPage>

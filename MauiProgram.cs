@@ -19,6 +19,7 @@ namespace SyncOne
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                     fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+                   // fonts.AddFont("MaterialIcons-Regular.ttf", "MaterialIcons");
                 });
 
             // Setup SQLite
@@ -33,8 +34,7 @@ namespace SyncOne
             builder.Services.AddSingleton<DatabaseService>();
             builder.Services.AddSingleton<ConfigurationService>();
 
-            builder.Services.AddSingleton<ApiService>(serviceProvider =>
-               new ApiService("http://localhost:5000")); // 
+            builder.Services.AddSingleton<ApiService>();
             // Register ViewModels
             builder.Services.AddTransient<MainViewModel>(serviceProvider =>
                 new MainViewModel(
