@@ -16,5 +16,6 @@ namespace SyncOne.Models
         public string Response { get; set; }
         public DateTime? ProcessedAt { get; set; }
         public bool IsProcessing { get; internal set; }
+        public string SendStatus { get; set; }
     }
 }

@@ -17,6 +17,7 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _isRefreshing;
     private bool _hasError;
     private string _errorMessage;
+    private ConfigurationService _configService;
 
     public Command OpenSettingsCommand { get; private set; }
     public Command RefreshCommand { get; private set; }
@@ -66,13 +67,14 @@ public class MainViewModel : INotifyPropertyChanged
         IServiceProvider serviceProvider,
         ISmsService smsService,
         DatabaseService databaseService,
-        ApiService apiService)
+        ApiService apiService, ConfigurationService configurationService)
     {
         _serviceProvider = serviceProvider;
         _smsService = smsService;
         _databaseService = databaseService;
         _apiService = apiService;
         _messages = new ObservableCollection<SmsMessage>();
+        _configService = configurationService;
 
         InitializeDatabaseAsync().ConfigureAwait(false);
 
@@ -119,62 +121,89 @@ public class MainViewModel : INotifyPropertyChanged
 
     private async Task ProcessIncomingSmsAsync(SmsMessage message)
     {
+
+
+
         try
         {
+            if (!await _configService.IsPhoneNumberAllowedAsync(message.From))
+            {
+                await _configService.AddLogEntryAsync("SMS_FILTERED",
+                    $"Message from {message.From} was filtered out");
+                return;
+            }
             message.IsProcessing = true;
-            await _databaseService.InitializeAsync();
             await _databaseService.SaveMessageAsync(message);
 
-            MainThread.BeginInvokeOnMainThread(() =>
+            if (Messages != null)
             {
-                Messages.Insert(0, message);
-            });
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    Messages.Insert(0, message);
+                });
+            }
 
             var response = await _apiService.ProcessMessageAsync(message.From, message.Body);
+
+            // Try to send SMS with retries
+            const int maxRetries = 3;
+            int retryCount = 0;
+            bool sendSuccess = false;
+
+            while (!sendSuccess && retryCount < maxRetries)
+            {
+                sendSuccess = await _smsService.SendSmsAsync(message.From, response);
+                if (!sendSuccess)
+                {
+                    retryCount++;
+                    if (retryCount < maxRetries)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(2 * retryCount)); // Exponential backoff
+                        await _configService.AddLogEntryAsync("SMS_RETRY",
+                            $"Retrying SMS send to {message.From}, attempt {retryCount + 1}");
+                    }
+                }
+            }
 
             message.Response = response;
             message.IsProcessed = true;
             message.IsProcessing = false;
             message.ProcessedAt = DateTime.UtcNow;
+            message.SendStatus = sendSuccess ? "Sent" : "Failed";
 
             await _databaseService.SaveMessageAsync(message);
-            await _smsService.SendSmsAsync(message.From, response);
 
-            ErrorMessage = null;
+            if (Messages != null)
+            {
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    var existingMessage = Messages.FirstOrDefault(m => m.Id == message.Id);
+                    if (existingMessage != null)
+                    {
+                        var index = Messages.IndexOf(existingMessage);
+                        Messages[index] = message;
+                    }
+                });
+            }
+
+            if (sendSuccess)
+            {
+                await _configService.AddLogEntryAsync("SMS_PROCESSED",
+                    $"Successfully processed and sent message to {message.From}");
+            }
+            else
+            {
+                await _configService.AddLogEntryAsync("SMS_SEND_FAILED",
+                    $"Failed to send SMS to {message.From} after {maxRetries} attempts");
+            }
         }
         catch (Exception ex)
         {
             message.IsProcessing = false;
-            ErrorMessage = "Failed to process message";
+            message.SendStatus = "Error";
+            await _configService.AddLogEntryAsync("SMS_ERROR",
+                $"Error processing message from {message.From}: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"Error processing message: {ex.Message}");
-        }
-    }
-
-    public void Initialize(INavigation navigation)
-    {
-        _navigation = navigation;
-        OpenSettingsCommand = new Command(async () => await OpenSettingsAsync());
-        LoadMessagesAsync().ConfigureAwait(false);
-    }
-
-    private async Task OpenSettingsAsync()
-    {
-        if (_navigation == null)
-        {
-            System.Diagnostics.Debug.WriteLine("Navigation is null");
-            return;
-        }
-
-        try
-        {
-            var configPage = _serviceProvider.GetRequiredService<Views.ConfigurationPage>();
-            await _navigation.PushAsync(configPage);
-            ErrorMessage = null;
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = "Failed to open settings";
-            System.Diagnostics.Debug.WriteLine($"Error opening settings: {ex.Message}");
         }
     }
 
