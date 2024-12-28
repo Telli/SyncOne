@@ -7,6 +7,7 @@ using SyncOne.Models;
 using SyncOne.Services;
 using Microsoft.Extensions.Logging;
 using SmsMessage = SyncOne.Models.SmsMessage;
+using Resource = Microsoft.Maui.Resource;
 
 
 namespace SyncOne.Platforms.Android.Services
@@ -20,6 +21,11 @@ namespace SyncOne.Platforms.Android.Services
         private readonly ApiService _apiService;
         private readonly ConfigurationService _configService;
         private readonly ILogger _logger;
+
+        public BackgroudSmsService()
+        {
+            
+        }
 
         public BackgroudSmsService(ISmsService smsService, DatabaseService databaseService, ApiService apiService, ConfigurationService configService, ILogger<BackgroudSmsService> logger)
         {

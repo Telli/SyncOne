@@ -39,4 +39,16 @@ public class DatabaseService
         else
             await _database.UpdateAsync(message);
     }
+
+    public async Task<IEnumerable<SmsMessage>> GetUnprocessedMessagesAsync()
+    {
+        await InitializeAsync(); // Ensure database is initialized
+
+        // Assuming SmsMessage has a boolean property 'IsProcessed'
+        var unprocessedMessages = await _database.Table<SmsMessage>()
+                                                 .Where(message => !message.IsProcessed)
+                                                 .ToListAsync();
+
+        return unprocessedMessages;
+    }
 }

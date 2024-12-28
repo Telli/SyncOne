@@ -41,7 +41,8 @@ namespace SyncOne
                     serviceProvider,
                     serviceProvider.GetRequiredService<ISmsService>(),
                     serviceProvider.GetRequiredService<DatabaseService>(),
-                    serviceProvider.GetRequiredService<ApiService>()
+                    serviceProvider.GetRequiredService<ApiService>(),
+                    serviceProvider.GetRequiredService<ConfigurationService>()
                 ));
 
             builder.Services.AddTransient<ConfigurationViewModel>();
