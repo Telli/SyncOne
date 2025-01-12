@@ -10,7 +10,7 @@ namespace SyncOne.Services
 {
     public interface ISmsService
     {
-        Task<bool> RequestPermissionsAsync();
+       // Task<bool> RequestPermissionsAsync();
         Task<bool> SendSmsAsync(string phoneNumber, string message);
         event EventHandler<SmsMessage> OnSmsReceived;
     }

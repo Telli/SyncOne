@@ -17,5 +17,9 @@ namespace SyncOne.Models
         public DateTime? ProcessedAt { get; set; }
         public bool IsProcessing { get; internal set; }
         public string SendStatus { get; set; }
+
+        public string ExternalId { get; set; }
+        public string ApiStatus { get; set; }
+       
     }
 }

@@ -192,10 +192,7 @@ namespace SyncOne.Platforms.Android.Services
                 deliveredFilter);
         }
 
-        public Task<bool> RequestPermissionsAsync()
-        {
-            throw new NotImplementedException();
-        }
+      
     }
 
 }

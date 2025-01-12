@@ -29,6 +29,7 @@ namespace SyncOne
 #if ANDROID
             builder.Logging.AddDebug();
             builder.Services.AddSingleton<ISmsService, AndroidSmsService>();
+            builder.Services.AddSingleton<BackgroundSmsService>();
 #endif
             // Register core services
             builder.Services.AddSingleton<DatabaseService>();
@@ -44,6 +45,7 @@ namespace SyncOne
                     serviceProvider.GetRequiredService<ApiService>(),
                     serviceProvider.GetRequiredService<ConfigurationService>()
                 ));
+           
 
             builder.Services.AddTransient<ConfigurationViewModel>();
 

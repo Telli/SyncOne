@@ -30,39 +30,41 @@ namespace SyncOne.Services
                     throw new InvalidOperationException("API URL is not configured");
                 }
 
-                var formData = new FormUrlEncodedContent(new[]
+                var payload = new
                 {
-                new KeyValuePair<string, string>("from", from),
-                new KeyValuePair<string, string>("body", message)
-            });
+                    from = from,
+                    body = message,
+                    timestamp = DateTime.UtcNow,
+                    messageId = Guid.NewGuid().ToString()
+                };
+
+                var jsonContent = new StringContent(
+                    JsonSerializer.Serialize(payload),
+                    Encoding.UTF8,
+                    "application/json");
 
                 var response = await _httpClient.PostAsync(
                     $"{config.ApiUrl.TrimEnd('/')}/process",
-                    formData);
+                    jsonContent);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var jsonResponse = await response.Content.ReadAsStringAsync();
-                    var result = JsonSerializer.Deserialize<JsonElement>(jsonResponse);
-                    return result.GetProperty("response").GetString() ?? "No response received";
+                    return await response.Content.ReadAsStringAsync(); // Return full JSON response
                 }
 
                 await _configService.AddLogEntryAsync(
                     "API_ERROR",
                     $"Failed to process message. Status: {response.StatusCode}");
-
-                return "Error processing message";
+                throw new HttpRequestException($"API request failed with status {response.StatusCode}");
             }
             catch (Exception ex)
             {
                 await _configService.AddLogEntryAsync(
                     "API_ERROR",
                     $"Exception processing message: {ex.Message}");
-
-                return "Error processing message";
+                throw; // Rethrow to be handled by caller
             }
         }
-
 
 
         //public async Task<string> ProcessMessageAsync(string message)
