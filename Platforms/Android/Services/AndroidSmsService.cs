@@ -1,31 +1,33 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using System.Security.Permissions;
-using SyncOne.Models;
-using SmsMessage = SyncOne.Models.SmsMessage;
 using Android.App;
-using Android.Telephony;
 using Android.Content;
-using SyncOne.Services;
+using Android.Telephony;
 using Microsoft.Extensions.Logging;
+using SyncOne.Models;
+using SyncOne.Services;
+using SmsMessage = SyncOne.Models.SmsMessage;
+
 
 namespace SyncOne.Platforms.Android.Services
 {
-
-
-    [Activity(MainLauncher = true)]
     public class AndroidSmsService : ISmsService
     {
         private readonly Context _context;
-        private readonly ILogger _logger;  // Add logging
+        private readonly ILogger<AndroidSmsService> _logger;
+        private readonly SmsManager _smsManager;
+
         public event EventHandler<SmsMessage> OnSmsReceived;
 
-        public AndroidSmsService()
+        public AndroidSmsService(Context context, ILogger<AndroidSmsService> logger)
         {
-            _context = Platform.CurrentActivity;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _smsManager = SmsManager.Default;
+
+            // Register SMS receiver
             SmsReceiver.SetMessageHandler((sender, message) => OnSmsReceived?.Invoke(sender, message));
         }
 
@@ -33,17 +35,23 @@ namespace SyncOne.Platforms.Android.Services
         {
             try
             {
-                if (!await CheckSmsPermissionAsync())
+                if (string.IsNullOrWhiteSpace(phoneNumber))
+                    throw new ArgumentException("Phone number cannot be null or empty.", nameof(phoneNumber));
+
+                if (string.IsNullOrWhiteSpace(message))
+                    throw new ArgumentException("Message cannot be null or empty.", nameof(message));
+
+                // Check and request SMS permission
+                if (!await CheckAndRequestSmsPermissionAsync())
                 {
-                    _logger?.LogError("SMS permission not granted");
+                    _logger.LogError("SMS permission not granted.");
                     return false;
                 }
 
                 // Split message if it's too long
-                var smsManager = SmsManager.Default;
                 if (message.Length > 160)
                 {
-                    var parts = smsManager.DivideMessage(message);
+                    var parts = _smsManager.DivideMessage(message);
                     var sentIntents = new List<PendingIntent>();
                     var deliveredIntents = new List<PendingIntent>();
 
@@ -57,7 +65,7 @@ namespace SyncOne.Platforms.Android.Services
                     }
 
                     // Send multipart message
-                    smsManager.SendMultipartTextMessage(
+                    _smsManager.SendMultipartTextMessage(
                         phoneNumber,
                         null,
                         parts,
@@ -70,7 +78,7 @@ namespace SyncOne.Platforms.Android.Services
                     var sentIntent = CreateSentPendingIntent("SMS_SENT");
                     var deliveredIntent = CreateDeliveredPendingIntent("SMS_DELIVERED");
 
-                    smsManager.SendTextMessage(
+                    _smsManager.SendTextMessage(
                         phoneNumber,
                         null,
                         message,
@@ -78,27 +86,32 @@ namespace SyncOne.Platforms.Android.Services
                         deliveredIntent);
                 }
 
+                _logger.LogInformation($"SMS sent to {phoneNumber}.");
                 return true;
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, $"Failed to send SMS to {phoneNumber}");
+                _logger.LogError(ex, $"Failed to send SMS to {phoneNumber}.");
                 return false;
             }
         }
-        //public async Task<bool> RequestPermissionsAsync()
-        //{
-        //    var status = await Permissions.RequestAsync<Permissions.Sms>();
-        //    return status == PermissionStatus.Granted;
-        //}
-        private async Task<bool> CheckSmsPermissionAsync()
+
+        private async Task<bool> CheckAndRequestSmsPermissionAsync()
         {
-            var status = await Permissions.CheckStatusAsync<Permissions.Sms>();
-            if (status != PermissionStatus.Granted)
+            try
             {
-                status = await Permissions.RequestAsync<Permissions.Sms>();
+                var status = await Permissions.CheckStatusAsync<Permissions.Sms>();
+                if (status != PermissionStatus.Granted)
+                {
+                    status = await Permissions.RequestAsync<Permissions.Sms>();
+                }
+                return status == PermissionStatus.Granted;
             }
-            return status == PermissionStatus.Granted;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to check or request SMS permission.");
+                return false;
+            }
         }
 
         private PendingIntent CreateSentPendingIntent(string action)
@@ -119,6 +132,23 @@ namespace SyncOne.Platforms.Android.Services
                 0,
                 intent,
                 PendingIntentFlags.OneShot | PendingIntentFlags.Immutable);
+        }
+
+        // Register status receivers
+        private void RegisterStatusReceivers()
+        {
+            var sentFilter = new IntentFilter("SMS_SENT");
+            var deliveredFilter = new IntentFilter("SMS_DELIVERED");
+
+            _context.RegisterReceiver(
+                new SmsBroadcastReceiver((success, message) =>
+                    _logger.LogInformation($"SMS sent status: {success}, {message}")),
+                sentFilter);
+
+            _context.RegisterReceiver(
+                new SmsBroadcastReceiver((success, message) =>
+                    _logger.LogInformation($"SMS delivery status: {success}, {message}")),
+                deliveredFilter);
         }
 
         // SMS broadcast receiver for delivery status
@@ -143,18 +173,6 @@ namespace SyncOne.Platforms.Android.Services
                         case (int)Result.Ok:
                             _callback(true, "SMS sent successfully");
                             break;
-                        //case (int)SmsManager.sms:
-                        //    _callback(false, "Generic failure");
-                        //    break;
-                        //case (int)SmsManager.ResultErrorNoService:
-                        //    _callback(false, "No service");
-                        //    break;
-                        //case (int)SmsManager.ResultErrorNullPdu:
-                        //    _callback(false, "Null PDU");
-                        //    break;
-                        //case (int)SmsManager.ResultErrorRadioOff:
-                        //    _callback(false, "Radio off");
-                        //    break;
                         default:
                             _callback(false, $"Unknown error: {result}");
                             break;
@@ -174,25 +192,5 @@ namespace SyncOne.Platforms.Android.Services
                 }
             }
         }
-
-        // Register status receivers
-        private void RegisterStatusReceivers()
-        {
-            var sentFilter = new IntentFilter("SMS_SENT");
-            var deliveredFilter = new IntentFilter("SMS_DELIVERED");
-
-            _context.RegisterReceiver(
-                new SmsBroadcastReceiver((success, message) =>
-                    _logger?.LogInformation($"SMS sent status: {success}, {message}")),
-                sentFilter);
-
-            _context.RegisterReceiver(
-                new SmsBroadcastReceiver((success, message) =>
-                    _logger?.LogInformation($"SMS delivery status: {success}, {message}")),
-                deliveredFilter);
-        }
-
-      
     }
-
 }

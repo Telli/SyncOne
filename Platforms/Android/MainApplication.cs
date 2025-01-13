@@ -1,7 +1,7 @@
 ﻿using Android.App;
 using Android.Runtime;
 
-namespace SyncOne
+namespace SyncOne.Platforms.Android
 {
     [Application]
     public class MainApplication : MauiApplication

@@ -7,6 +7,7 @@ using Microsoft.Maui.Controls;
 using SyncOne.Models;
 using SyncOne.Services;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 using SmsMessage = SyncOne.Models.SmsMessage;
 
 namespace SyncOne.ViewModels
@@ -18,6 +19,7 @@ namespace SyncOne.ViewModels
         private readonly ApiService _apiService;
         private readonly ConfigurationService _configService;
         private readonly IServiceProvider _serviceProvider;
+        private readonly ILogger<MainViewModel> _logger;
         private readonly SemaphoreSlim _processingLock = new SemaphoreSlim(1, 1);
         private bool _disposed;
 
@@ -52,6 +54,7 @@ namespace SyncOne.ViewModels
                 {
                     _isRefreshing = value;
                     OnPropertyChanged();
+                    RefreshCommand.ChangeCanExecute();
                 }
             }
         }
@@ -96,19 +99,20 @@ namespace SyncOne.ViewModels
             _apiService = apiService ?? throw new ArgumentNullException(nameof(apiService));
             _configService = configurationService ?? throw new ArgumentNullException(nameof(configurationService));
 
+            _logger = _serviceProvider.GetService<ILogger<MainViewModel>>()
+                      ?? throw new InvalidOperationException("ILogger<MainViewModel> not found.");
+
             _messages = new ObservableCollection<SmsMessage>();
             _refreshCancellation = new CancellationTokenSource();
 
             RefreshCommand = new Command(async () => await RefreshMessagesAsync(), () => !IsRefreshing);
 
-            // Initialize asynchronously but don't await
-            Initialize();
+            Task.Run(InitializeAsync);
 
-            // Safe event subscription with weak reference
             _smsService.OnSmsReceived += HandleSmsReceived;
         }
 
-        private async void Initialize()
+        private async Task InitializeAsync()
         {
             try
             {
@@ -117,7 +121,7 @@ namespace SyncOne.ViewModels
             }
             catch (Exception ex)
             {
-                HandleError("Initialization failed", ex);
+                await HandleError("Initialization failed", ex);
             }
         }
 
@@ -188,7 +192,7 @@ namespace SyncOne.ViewModels
                 if (!await _configService.IsPhoneNumberAllowedAsync(message.From))
                 {
                     await _configService.AddLogEntryAsync("SMS_FILTERED",
-                        $"Message from {message.From} was filtered out");
+                              $"Message from {message.From} was filtered out");
                     return;
                 }
 
@@ -197,11 +201,11 @@ namespace SyncOne.ViewModels
 
                 await AddMessageToCollectionAsync(message);
 
-                var response = await ProcessMessageWithRetryAsync(message);
-                if (response == null) return; // Processing failed or was cancelled
+                var apiResponse = await ProcessMessageWithRetryAsync(message);
+                if (apiResponse == null) return; // Processing failed or was cancelled
 
-                var sendSuccess = await SendSmsWithRetryAsync(message.From, response);
-                await UpdateMessageStatusAsync(message, response, sendSuccess);
+                var sendSuccess = await SendSmsWithRetryAsync(message.From, apiResponse.Response);
+                await UpdateMessageStatusAsync(message, apiResponse, sendSuccess);
                 await LogProcessingResultAsync(message, sendSuccess);
             }
             catch (Exception ex)
@@ -214,7 +218,7 @@ namespace SyncOne.ViewModels
             }
         }
 
-        private async Task<string> ProcessMessageWithRetryAsync(SmsMessage message)
+        private async Task<ApiResponse> ProcessMessageWithRetryAsync(SmsMessage message)
         {
             const int maxRetries = 3;
             for (int i = 0; i < maxRetries; i++)
@@ -226,7 +230,7 @@ namespace SyncOne.ViewModels
                 catch (Exception ex) when (i < maxRetries - 1)
                 {
                     await _configService.AddLogEntryAsync("API_RETRY",
-                        $"Retrying API call for {message.From}, attempt {i + 2}/{maxRetries}");
+                              $"Retrying API call for {message.From}, attempt {i + 2}/{maxRetries}");
                     await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, i))); // Exponential backoff
                 }
             }
@@ -247,14 +251,14 @@ namespace SyncOne.ViewModels
                     {
                         var delay = TimeSpan.FromSeconds(Math.Pow(2, i)); // Exponential backoff
                         await _configService.AddLogEntryAsync("SMS_RETRY",
-                            $"Retrying SMS send to {phoneNumber}, attempt {i + 2}/{maxRetries}");
+                                  $"Retrying SMS send to {phoneNumber}, attempt {i + 2}/{maxRetries}");
                         await Task.Delay(delay);
                     }
                 }
                 catch (Exception ex) when (i < maxRetries - 1)
                 {
                     await _configService.AddLogEntryAsync("SMS_ERROR",
-                        $"Error sending SMS to {phoneNumber}: {ex.Message}");
+                              $"Error sending SMS to {phoneNumber}: {ex.Message}");
                 }
             }
             return false;
@@ -273,9 +277,9 @@ namespace SyncOne.ViewModels
             });
         }
 
-        private async Task UpdateMessageStatusAsync(SmsMessage message, string response, bool sendSuccess)
+        private async Task UpdateMessageStatusAsync(SmsMessage message, ApiResponse apiResponse, bool sendSuccess)
         {
-            message.Response = response;
+            message.Response = apiResponse.Response;
             message.IsProcessed = true;
             message.IsProcessing = false;
             message.ProcessedAt = DateTime.UtcNow;
@@ -302,12 +306,12 @@ namespace SyncOne.ViewModels
             if (sendSuccess)
             {
                 await _configService.AddLogEntryAsync("SMS_PROCESSED",
-                    $"Successfully processed and sent message to {message.From}");
+                      $"Successfully processed and sent message to {message.From}");
             }
             else
             {
                 await _configService.AddLogEntryAsync("SMS_SEND_FAILED",
-                    $"Failed to send SMS to {message.From}");
+                      $"Failed to send SMS to {message.From}");
             }
         }
 
@@ -317,7 +321,7 @@ namespace SyncOne.ViewModels
             message.SendStatus = "Error";
 
             await _configService.AddLogEntryAsync("SMS_ERROR",
-                $"Error processing message from {message.From}: {ex.Message}");
+                  $"Error processing message from {message.From}: {ex.Message}");
 
             await HandleError($"Error processing message from {message.From}", ex);
         }
@@ -347,7 +351,7 @@ namespace SyncOne.ViewModels
 
         private async Task HandleError(string message, Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"{message}: {ex}");
+            _logger.LogError(ex, message);
 
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
@@ -357,8 +361,7 @@ namespace SyncOne.ViewModels
                 }
             });
 
-            await _configService.AddLogEntryAsync("ERROR",
-                $"{message}: {ex.Message}");
+            await _configService.AddLogEntryAsync("ERROR", $"{message}: {ex.Message}");
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

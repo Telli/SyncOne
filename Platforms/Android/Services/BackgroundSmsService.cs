@@ -3,17 +3,19 @@ using Android.Content;
 using Android.OS;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 using SyncOne.Models;
 using SyncOne.Services;
-using System.Text.Json;
 using SmsMessage = SyncOne.Models.SmsMessage;
+using Resource = Microsoft.Maui.Resource;
 
 namespace SyncOne.Platforms.Android.Services
 {
-    [Service(Name = "syncone.platforms.android.services.BackgroundSmsService", Exported = true)]
+    [Service(Name = "SyncOne.Platforms.Android.Services.BackgroundSmsService", Exported = true)]
     public class BackgroundSmsService : Service, IDisposable
     {
         private const int NOTIFICATION_ID = 1;
@@ -27,13 +29,32 @@ namespace SyncOne.Platforms.Android.Services
         private bool _isRunning;
         private bool _disposed;
         private CancellationTokenSource _cancellationTokenSource;
-        private ISmsService _smsService;
-        private DatabaseService _databaseService;
-        private ApiService _apiService;
-        private ConfigurationService _configService;
-        private ILogger<BackgroundSmsService> _logger;
+        private readonly ISmsService _smsService;
+        private readonly DatabaseService _databaseService;
+        private readonly ApiService _apiService;
+        private readonly ConfigurationService _configService;
+        private readonly ILogger<BackgroundSmsService> _logger;
         private NotificationManager _notificationManager;
         private PowerManager.WakeLock _wakeLock;
+
+        // Constructor Injection
+        public BackgroundSmsService()
+        {
+                
+        }
+        public BackgroundSmsService(
+            ISmsService smsService,
+            DatabaseService databaseService,
+            ApiService apiService,
+            ConfigurationService configService,
+            ILogger<BackgroundSmsService> logger)
+        {
+            _smsService = smsService;
+            _databaseService = databaseService;
+            _apiService = apiService;
+            _configService = configService;
+            _logger = logger;
+        }
 
         public override void OnCreate()
         {
@@ -42,7 +63,6 @@ namespace SyncOne.Platforms.Android.Services
             try
             {
                 AcquireWakeLock();
-                InitializeServices();
                 InitializeNotificationManager();
                 StartServiceOperation();
             }
@@ -86,25 +106,6 @@ namespace SyncOne.Platforms.Android.Services
         public override IBinder OnBind(Intent intent)
         {
             return null;
-        }
-
-        private void InitializeServices()
-        {
-            try
-            {
-                var serviceProvider = MauiApplication.Current?.Services
-                    ?? throw new InvalidOperationException("Application services not initialized");
-
-                _smsService = serviceProvider.GetRequiredService<ISmsService>();
-                _databaseService = serviceProvider.GetRequiredService<DatabaseService>();
-                _apiService = serviceProvider.GetRequiredService<ApiService>();
-                _configService = serviceProvider.GetRequiredService<ConfigurationService>();
-                _logger = serviceProvider.GetRequiredService<ILogger<BackgroundSmsService>>();
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException("Failed to initialize required services", ex);
-            }
         }
 
         private void InitializeNotificationManager()
@@ -160,7 +161,8 @@ namespace SyncOne.Platforms.Android.Services
                 .SetContentText(text)
                 .SetOngoing(true)
                 .SetCategory(Notification.CategoryService)
-                .SetPriority((int)NotificationPriority.Low);
+                .SetPriority((int)NotificationPriority.Low)
+                .SetSmallIcon(Resource.Drawable.ic_stat_notifications_active);
 
             if (Build.VERSION.SdkInt >= BuildVersionCodes.S)
             {
@@ -216,7 +218,6 @@ namespace SyncOne.Platforms.Android.Services
                     catch (Exception ex)
                     {
                         _logger?.LogError(ex, "Failed to process message {MessageId}", message.Id);
-                        // Continue processing other messages
                     }
                 }
             }
@@ -237,79 +238,52 @@ namespace SyncOne.Platforms.Android.Services
                     return;
                 }
 
-                message.IsProcessing = true;
-                await _databaseService.SaveMessageAsync(message);
+                await MarkMessageAsProcessing(message);
 
-                var apiResponse = await ProcessApiRequestWithRetry(message);
-                if (apiResponse == null) return;
+                var apiResponse = await _apiService.ProcessMessageAsync(message.From, message.Body);
 
                 var sendSuccess = await SendSmsWithRetry(message.From, apiResponse.Response);
 
                 await UpdateMessageStatus(message, apiResponse, sendSuccess);
                 await LogProcessingResult(message, sendSuccess);
             }
+            catch (ApiException ex)
+            {
+                _logger?.LogError(ex, "API processing failed for message {MessageId}", message.Id);
+                await HandleProcessingError(message, ex);
+            }
             catch (Exception ex)
             {
+                _logger?.LogError(ex, "Unexpected error processing message {MessageId}", message.Id);
                 await HandleProcessingError(message, ex);
-                throw;
             }
         }
 
-        private async Task<ApiResponse> ProcessApiRequestWithRetry(SmsMessage message)
+
+        private async Task MarkMessageAsProcessing(SmsMessage message)
         {
-            for (int attempt = 1; attempt <= MAX_RETRIES; attempt++)
-            {
-                try
-                {
-                    var response = await _apiService.ProcessMessageAsync(message.From, message.Body);
-                    var apiResponse = JsonSerializer.Deserialize<ApiResponse>(response);
-
-                    if (apiResponse?.Response == null)
-                    {
-                        throw new InvalidOperationException("Invalid API response format");
-                    }
-
-                    return apiResponse;
-                }
-                catch (Exception ex) when (attempt < MAX_RETRIES)
-                {
-                    var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
-                    _logger?.LogWarning(ex,
-                        "API request attempt {Attempt} failed for message {MessageId}",
-                        attempt, message.Id);
-                    await Task.Delay(delay);
-                }
-            }
-
-            throw new InvalidOperationException(
-                $"Failed to process API request after {MAX_RETRIES} attempts");
+            message.IsProcessing = true;
+            await _databaseService.SaveMessageAsync(message);
         }
 
-        private async Task<bool> SendSmsWithRetry(string phoneNumber, string message)
+        private async Task<bool> SendSmsWithRetry(string phoneNumber, string messageText)
         {
-            for (int attempt = 1; attempt <= MAX_RETRIES; attempt++)
-            {
-                try
-                {
-                    var success = await _smsService.SendSmsAsync(phoneNumber, message);
-                    if (success) return true;
-
-                    if (attempt < MAX_RETRIES)
+            // Exponential Backoff with Jitter
+            var retryPolicy = Policy
+                .Handle<Exception>()
+                .WaitAndRetryAsync(MAX_RETRIES,
+                    retryAttempt => TimeSpan.FromSeconds(Math.Pow(BASE_RETRY_DELAY_SECONDS, retryAttempt - 1)
+                                                       + new Random().Next(0, BASE_RETRY_DELAY_SECONDS)),
+                    (exception, timeSpan, retryCount, context) =>
                     {
-                        var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
-                        await _configService.AddLogEntryAsync("SMS_RETRY",
-                            $"Retrying SMS send to {phoneNumber}, attempt {attempt + 1}");
-                        await Task.Delay(delay);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex,
-                        "Error sending SMS attempt {Attempt}/{MaxRetries}",
-                        attempt, MAX_RETRIES);
-                }
-            }
-            return false;
+                        _logger?.LogError(exception,
+                            "Error sending SMS attempt {RetryCount}/{MaxRetries}. Retrying in {TimeSpan} seconds.",
+                            retryCount, MAX_RETRIES, timeSpan);
+                    });
+
+            // Execute the SMS sending operation with the retry policy
+            return await retryPolicy.ExecuteAsync(async () =>
+                await _smsService.SendSmsAsync(phoneNumber, messageText));
         }
 
         private async Task UpdateMessageStatus(
@@ -422,14 +396,6 @@ namespace SyncOne.Platforms.Android.Services
                 }
                 _disposed = true;
             }
-        }
-
-        private class ApiResponse
-        {
-            public string Response { get; set; }
-            public string Status { get; set; }
-            public string MessageId { get; set; }
-            public DateTime Timestamp { get; set; }
         }
     }
 }
