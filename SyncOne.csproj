@@ -86,6 +86,7 @@
 
   <ItemGroup>
     <PackageReference Include="AathifMahir.Maui.MauiIcons.Material" Version="4.0.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="9.0.0" />

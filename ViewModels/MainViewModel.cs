@@ -107,7 +107,8 @@ namespace SyncOne.ViewModels
 
             RefreshCommand = new Command(async () => await RefreshMessagesAsync(), () => !IsRefreshing);
 
-            Task.Run(InitializeAsync);
+            // Fire and forget initialization on a background thread
+            _ = Task.Run(InitializeAsync);
 
             _smsService.OnSmsReceived += HandleSmsReceived;
         }

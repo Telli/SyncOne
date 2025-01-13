@@ -12,6 +12,7 @@ using SyncOne.Models;
 using SyncOne.Services;
 using SmsMessage = SyncOne.Models.SmsMessage;
 using Resource = Microsoft.Maui.Resource;
+using Android.Content.PM;
 
 namespace SyncOne.Platforms.Android.Services
 {
@@ -25,7 +26,7 @@ namespace SyncOne.Platforms.Android.Services
         private const int PROCESSING_INTERVAL_SECONDS = 30;
         private const int ERROR_RETRY_DELAY_SECONDS = 60;
 
-        private readonly SemaphoreSlim _processingSemaphore = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _processingSemaphore = new(1, 1);
         private bool _isRunning;
         private bool _disposed;
         private CancellationTokenSource _cancellationTokenSource;
@@ -40,8 +41,8 @@ namespace SyncOne.Platforms.Android.Services
         // Constructor Injection
         public BackgroundSmsService()
         {
-                
         }
+
         public BackgroundSmsService(
             ISmsService smsService,
             DatabaseService databaseService,
@@ -49,11 +50,11 @@ namespace SyncOne.Platforms.Android.Services
             ConfigurationService configService,
             ILogger<BackgroundSmsService> logger)
         {
-            _smsService = smsService;
-            _databaseService = databaseService;
-            _apiService = apiService;
-            _configService = configService;
-            _logger = logger;
+            _smsService = smsService ?? throw new ArgumentNullException(nameof(smsService));
+            _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
+            _apiService = apiService ?? throw new ArgumentNullException(nameof(apiService));
+            _configService = configService ?? throw new ArgumentNullException(nameof(configService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public override void OnCreate()
@@ -147,7 +148,8 @@ namespace SyncOne.Platforms.Android.Services
                 "SyncOne is running",
                 "Processing SMS messages in background");
 
-            StartForeground(NOTIFICATION_ID, notification);
+            // Start the service in the foreground with a valid service type
+            StartForeground(NOTIFICATION_ID, notification, ForegroundService.TypeDataSync);
 
             Task.Run(
                 () => BackgroundProcessingLoop(_cancellationTokenSource.Token),
@@ -258,7 +260,6 @@ namespace SyncOne.Platforms.Android.Services
                 await HandleProcessingError(message, ex);
             }
         }
-
 
         private async Task MarkMessageAsProcessing(SmsMessage message)
         {

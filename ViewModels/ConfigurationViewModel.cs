@@ -6,6 +6,10 @@ using System.Windows.Input;
 using Microsoft.Extensions.Logging;
 using SyncOne.Models;
 using SyncOne.Services;
+#if ANDROID
+using Android.Content;
+using SyncOne.Platforms.Android.Services;
+#endif
 
 namespace SyncOne.ViewModels
 {
@@ -22,6 +26,8 @@ namespace SyncOne.ViewModels
         private bool _isAddingNumber;
         private string _phoneNumberError;
         private string _apiUrlError;
+        public ICommand EnableBackgroundServiceCommand { get; }
+        public ICommand DisableBackgroundServiceCommand { get; }
 
         public AppConfig Config
         {
@@ -132,6 +138,8 @@ namespace SyncOne.ViewModels
 
             AllowedNumbers = new ObservableCollection<PhoneNumberFilter>();
             BlockedNumbers = new ObservableCollection<PhoneNumberFilter>();
+            EnableBackgroundServiceCommand = new Command(EnableBackgroundService);
+            DisableBackgroundServiceCommand = new Command(DisableBackgroundService);
 
             SaveConfigCommand = new Command(async () => await SaveConfigAsync());
             AddAllowedNumberCommand = new Command(async () => await AddPhoneNumberAsync(true));
@@ -160,7 +168,23 @@ namespace SyncOne.ViewModels
             PhoneNumberError = null;
             return true;
         }
+        private void EnableBackgroundService()
+        {
+#if ANDROID
+            var context = Platform.CurrentActivity.ApplicationContext;
+            var intent = new Intent(context, typeof(BackgroundSmsService));
+            context.StartService(intent);
+#endif
+        }
 
+        private void DisableBackgroundService()
+        {
+#if ANDROID
+            var context = Platform.CurrentActivity.ApplicationContext;
+            var intent = new Intent(context, typeof(BackgroundSmsService));
+            context.StopService(intent);
+#endif
+        }
         private bool ValidateApiUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url))

@@ -38,17 +38,7 @@ namespace SyncOne
             }
         }
 
-        protected override void OnAppearing()
-        {
-            base.OnAppearing();
-            _logger.LogInformation("MainPage is appearing.");
-        }
-
-        protected override void OnDisappearing()
-        {
-            base.OnDisappearing();
-            _logger.LogInformation("MainPage is disappearing.");
-        }
+        // ... (OnAppearing, OnDisappearing)
 
         public void Dispose()
         {
@@ -62,15 +52,11 @@ namespace SyncOne
             {
                 if (disposing)
                 {
-                    // Unsubscribe from events or clean up resources if needed
+                    // No need to unsubscribe from events here, 
+                    // as the MainViewModel handles that.
                 }
                 _disposed = true;
             }
-        }
-
-        ~MainPage()
-        {
-            Dispose(false);
         }
     }
 }

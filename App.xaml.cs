@@ -37,39 +37,11 @@ namespace SyncOne
                 BarTextColor = Colors.White
             };
 
-            MainThread.InvokeOnMainThreadAsync(async () =>
-            {
-                await InitializeAsync();
-            });
+            // Fire and forget initialization
+            _ = InitializeAsync();
         }
 
-        protected override void OnSleep()
-        {
-            base.OnSleep();
-
-#if ANDROID
-            if (OperatingSystem.IsAndroid())
-            {
-                var context = Application.Context;
-                var intent = new Intent(context, typeof(BackgroundSmsService));
-                context.StartForegroundService(intent);
-            }
-#endif
-        }
-
-        protected override void OnResume()
-        {
-            base.OnResume();
-
-#if ANDROID
-            if (OperatingSystem.IsAndroid())
-            {
-                var context = Application.Context;
-                var intent = new Intent(context, typeof(BackgroundSmsService));
-                context.StopService(intent);
-            }
-#endif
-        }
+        // ... (OnSleep, OnResume)
 
         private async Task InitializeAsync()
         {
@@ -90,8 +62,7 @@ namespace SyncOne
                         await Current.MainPage.DisplayAlert(
                             "Initialization Error",
                             "There was a problem starting the application. Please try again.",
-                            "OK"
-                        );
+                            "OK");
                     });
                 }
                 catch (Exception alertEx)
@@ -100,6 +71,7 @@ namespace SyncOne
                 }
             }
         }
+
 
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {

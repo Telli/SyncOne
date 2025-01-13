@@ -182,6 +182,35 @@
                         </VerticalStackLayout>
                     </VerticalStackLayout>
                 </Border>
+
+                <Border StrokeShape="RoundRectangle 8"
+                        Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray900}}"
+                        Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="Background Service"
+                               FontSize="20"
+                               FontAttributes="Bold" />
+
+                        <HorizontalStackLayout Spacing="8">
+                            <Button Text="Enable"
+                                    Command="{Binding EnableBackgroundServiceCommand}"
+                                    BackgroundColor="{StaticResource Primary}"
+                                    TextColor="White"
+                                    HeightRequest="44"
+                                    HorizontalOptions="FillAndExpand"
+                                    CornerRadius="8" />
+
+                            <Button Text="Disable"
+                                    Command="{Binding DisableBackgroundServiceCommand}"
+                                    BackgroundColor="{StaticResource Secondary}"
+                                    TextColor="White"
+                                    HeightRequest="44"
+                                    HorizontalOptions="FillAndExpand"
+                                    CornerRadius="8" />
+                        </HorizontalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
             </VerticalStackLayout>
         </ScrollView>
 
