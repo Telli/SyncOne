@@ -26,8 +26,8 @@ namespace SyncOne.ViewModels
         private bool _isAddingNumber;
         private string _phoneNumberError;
         private string _apiUrlError;
-        public ICommand EnableBackgroundServiceCommand { get; }
-        public ICommand DisableBackgroundServiceCommand { get; }
+        private bool _isServiceRunning;
+        private string _serviceStatusMessage;
 
         public AppConfig Config
         {
@@ -126,10 +126,33 @@ namespace SyncOne.ViewModels
 
         public bool HasApiUrlError => !string.IsNullOrEmpty(ApiUrlError);
 
+        public bool IsServiceRunning
+        {
+            get => _isServiceRunning;
+            set
+            {
+                _isServiceRunning = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ServiceStatusMessage));
+            }
+        }
+
+        public string ServiceStatusMessage
+        {
+            get => _isServiceRunning ? "Service is running" : "Service is stopped";
+            set
+            {
+                _serviceStatusMessage = value;
+                OnPropertyChanged();
+            }
+        }
+
         public ICommand SaveConfigCommand { get; }
         public ICommand AddAllowedNumberCommand { get; }
         public ICommand AddBlockedNumberCommand { get; }
         public ICommand RemoveNumberCommand { get; }
+        public ICommand EnableBackgroundServiceCommand { get; }
+        public ICommand DisableBackgroundServiceCommand { get; }
 
         public ConfigurationViewModel(ConfigurationService configService, ILogger<ConfigurationViewModel> logger)
         {
@@ -158,7 +181,7 @@ namespace SyncOne.ViewModels
             }
 
             // Basic phone number validation
-            var regex = new Regex(@"^\+?[\d\s-]{10,}$");
+            var regex = new Regex(@"^(\+?[\d\s-]{10,}|\*?\d{3,6}#?)$");
             if (!regex.IsMatch(number))
             {
                 PhoneNumberError = "Invalid phone number format";
@@ -168,23 +191,56 @@ namespace SyncOne.ViewModels
             PhoneNumberError = null;
             return true;
         }
+
         private void EnableBackgroundService()
         {
 #if ANDROID
-            var context = Platform.CurrentActivity.ApplicationContext;
-            var intent = new Intent(context, typeof(BackgroundSmsService));
-            context.StartService(intent);
+            try
+            {
+                var context = Platform.CurrentActivity.ApplicationContext;
+                var intent = new Intent(context, typeof(BackgroundSmsService));
+                if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.O)
+                {
+                    // Use StartForegroundService for Android O and above
+                    context.StartForegroundService(intent);
+                }
+                else
+                {
+                    // Fallback to StartService for older versions
+                    context.StartService(intent);
+                }
+
+                IsServiceRunning = true;
+                ServiceStatusMessage = "Service started successfully";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start background service.");
+                ServiceStatusMessage = $"Failed to start service: {ex.Message}";
+            }
 #endif
         }
 
         private void DisableBackgroundService()
         {
 #if ANDROID
-            var context = Platform.CurrentActivity.ApplicationContext;
-            var intent = new Intent(context, typeof(BackgroundSmsService));
-            context.StopService(intent);
+            try
+            {
+                var context = Platform.CurrentActivity.ApplicationContext;
+                var intent = new Intent(context, typeof(BackgroundSmsService));
+                context.StopService(intent);
+
+                IsServiceRunning = false;
+                ServiceStatusMessage = "Service stopped successfully";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to stop background service.");
+                ServiceStatusMessage = $"Failed to stop service: {ex.Message}";
+            }
 #endif
         }
+
         private bool ValidateApiUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url))

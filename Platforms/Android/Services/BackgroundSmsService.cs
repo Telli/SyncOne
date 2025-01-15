@@ -13,6 +13,7 @@ using SyncOne.Services;
 using SmsMessage = SyncOne.Models.SmsMessage;
 using Resource = Microsoft.Maui.Resource;
 using Android.Content.PM;
+using Microsoft.Maui.ApplicationModel;
 
 namespace SyncOne.Platforms.Android.Services
 {
@@ -41,20 +42,11 @@ namespace SyncOne.Platforms.Android.Services
         // Constructor Injection
         public BackgroundSmsService()
         {
-        }
-
-        public BackgroundSmsService(
-            ISmsService smsService,
-            DatabaseService databaseService,
-            ApiService apiService,
-            ConfigurationService configService,
-            ILogger<BackgroundSmsService> logger)
-        {
-            _smsService = smsService ?? throw new ArgumentNullException(nameof(smsService));
-            _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
-            _apiService = apiService ?? throw new ArgumentNullException(nameof(apiService));
-            _configService = configService ?? throw new ArgumentNullException(nameof(configService));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _smsService = MauiProgram.ServiceProvider.GetRequiredService<ISmsService>();
+            _databaseService = MauiProgram.ServiceProvider.GetRequiredService<DatabaseService>();
+            _apiService = MauiProgram.ServiceProvider.GetRequiredService<ApiService>();
+            _configService = MauiProgram.ServiceProvider.GetRequiredService<ConfigurationService>();
+            _logger = MauiProgram.ServiceProvider.GetRequiredService<ILogger<BackgroundSmsService>>();
         }
 
         public override void OnCreate()
@@ -65,6 +57,7 @@ namespace SyncOne.Platforms.Android.Services
             {
                 AcquireWakeLock();
                 InitializeNotificationManager();
+               
                 StartServiceOperation();
             }
             catch (Exception ex)
@@ -149,7 +142,14 @@ namespace SyncOne.Platforms.Android.Services
                 "Processing SMS messages in background");
 
             // Start the service in the foreground with a valid service type
-            StartForeground(NOTIFICATION_ID, notification, ForegroundService.TypeDataSync);
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
+            {
+                StartForeground(NOTIFICATION_ID, notification);
+            }
+            else
+            {
+                StartForeground(NOTIFICATION_ID, notification, ForegroundService.TypeDataSync);
+            }
 
             Task.Run(
                 () => BackgroundProcessingLoop(_cancellationTokenSource.Token),
@@ -208,18 +208,36 @@ namespace SyncOne.Platforms.Android.Services
             await _processingSemaphore.WaitAsync(cancellationToken);
             try
             {
+                // Fetch unprocessed messages older than 5 minutes
                 var messages = await _databaseService.GetUnprocessedMessagesAsync();
+                var currentTime = DateTime.UtcNow;
+
                 foreach (var message in messages)
                 {
                     if (cancellationToken.IsCancellationRequested) break;
 
                     try
                     {
+                        // Skip messages that are already processed
+                        if (message.IsProcessed)
+                        {
+                            _logger?.LogInformation("Skipping already processed message {MessageId}", message.Id);
+                            continue;
+                        }
+
+                        // Skip messages that are newer than 5 minutes
+                        if (currentTime - message.ReceivedAt < TimeSpan.FromMinutes(5))
+                        {
+                            _logger?.LogInformation("Skipping message {MessageId} because it is newer than 5 minutes", message.Id);
+                            continue;
+                        }
+
                         await ProcessSingleMessage(message);
                     }
                     catch (Exception ex)
                     {
                         _logger?.LogError(ex, "Failed to process message {MessageId}", message.Id);
+                        await HandleProcessingError(message, ex);
                     }
                 }
             }
@@ -233,30 +251,31 @@ namespace SyncOne.Platforms.Android.Services
         {
             try
             {
-                if (!await _configService.IsPhoneNumberAllowedAsync(message.From))
+                // Skip if the message is already being processed or processed
+                if (message.IsProcessing || message.IsProcessed)
                 {
-                    await _configService.AddLogEntryAsync("SMS_FILTERED",
-                        $"Message from {message.From} was filtered out");
+                    _logger?.LogInformation("Skipping message {MessageId} (already being processed or processed)", message.Id);
                     return;
                 }
 
+                // Mark the message as processing
                 await MarkMessageAsProcessing(message);
 
+                // Process the message with the API
                 var apiResponse = await _apiService.ProcessMessageAsync(message.From, message.Body);
 
+                // Send the response SMS
                 var sendSuccess = await SendSmsWithRetry(message.From, apiResponse.Response);
 
+                // Update the message status
                 await UpdateMessageStatus(message, apiResponse, sendSuccess);
+
+                // Log the processing result
                 await LogProcessingResult(message, sendSuccess);
-            }
-            catch (ApiException ex)
-            {
-                _logger?.LogError(ex, "API processing failed for message {MessageId}", message.Id);
-                await HandleProcessingError(message, ex);
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Unexpected error processing message {MessageId}", message.Id);
+                _logger?.LogError(ex, "Failed to process message {MessageId}", message.Id);
                 await HandleProcessingError(message, ex);
             }
         }
@@ -284,7 +303,39 @@ namespace SyncOne.Platforms.Android.Services
 
             // Execute the SMS sending operation with the retry policy
             return await retryPolicy.ExecuteAsync(async () =>
-                await _smsService.SendSmsAsync(phoneNumber, messageText));
+            {
+                // Ensure permission is granted before sending SMS
+                bool hasPermission = await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    return await CheckAndRequestSmsPermissionAsync();
+                });
+
+                if (!hasPermission)
+                {
+                    _logger?.LogError("SMS permission not granted.");
+                    return false;
+                }
+
+                return await _smsService.SendSmsAsync(phoneNumber, messageText);
+            });
+        }
+
+        private async Task<bool> CheckAndRequestSmsPermissionAsync()
+        {
+            try
+            {
+                var status = await Permissions.CheckStatusAsync<Permissions.Sms>();
+                if (status != PermissionStatus.Granted)
+                {
+                    status = await Permissions.RequestAsync<Permissions.Sms>();
+                }
+                return status == PermissionStatus.Granted;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to check or request SMS permission.");
+                return false;
+            }
         }
 
         private async Task UpdateMessageStatus(
@@ -320,13 +371,17 @@ namespace SyncOne.Platforms.Android.Services
         private async Task HandleProcessingError(SmsMessage message, Exception ex)
         {
             message.IsProcessing = false;
+            message.IsProcessed = false; // Ensure it's marked as not processed
             message.SendStatus = "Error";
+            await _databaseService.SaveMessageAsync(message); // Save the updated status
 
             await _configService.AddLogEntryAsync("SMS_ERROR",
                 $"Error processing message from {message.From}: {ex.Message}");
 
             _logger?.LogError(ex, "Failed to process message from {From}", message.From);
         }
+
+     
 
         private void LogCriticalError(string message, Exception ex)
         {

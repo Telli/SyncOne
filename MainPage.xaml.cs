@@ -52,8 +52,7 @@ namespace SyncOne
             {
                 if (disposing)
                 {
-                    // No need to unsubscribe from events here, 
-                    // as the MainViewModel handles that.
+                    
                 }
                 _disposed = true;
             }

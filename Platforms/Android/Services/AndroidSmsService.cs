@@ -41,8 +41,13 @@ namespace SyncOne.Platforms.Android.Services
                 if (string.IsNullOrWhiteSpace(message))
                     throw new ArgumentException("Message cannot be null or empty.", nameof(message));
 
-                // Check and request SMS permission
-                if (!await CheckAndRequestSmsPermissionAsync())
+                // Check and request SMS permission on the main thread
+                bool hasPermission = await MainThread.InvokeOnMainThreadAsync(async () =>
+                {
+                    return await CheckAndRequestSmsPermissionAsync();
+                });
+
+                if (!hasPermission)
                 {
                     _logger.LogError("SMS permission not granted.");
                     return false;
@@ -113,6 +118,89 @@ namespace SyncOne.Platforms.Android.Services
                 return false;
             }
         }
+
+        //public async Task<bool> SendSmsAsync(string phoneNumber, string message)
+        //{
+        //    try
+        //    {
+        //        if (string.IsNullOrWhiteSpace(phoneNumber))
+        //            throw new ArgumentException("Phone number cannot be null or empty.", nameof(phoneNumber));
+
+        //        if (string.IsNullOrWhiteSpace(message))
+        //            throw new ArgumentException("Message cannot be null or empty.", nameof(message));
+
+        //        // Check and request SMS permission
+        //        if (!await CheckAndRequestSmsPermissionAsync())
+        //        {
+        //            _logger.LogError("SMS permission not granted.");
+        //            return false;
+        //        }
+
+        //        // Split message if it's too long
+        //        if (message.Length > 160)
+        //        {
+        //            var parts = _smsManager.DivideMessage(message);
+        //            var sentIntents = new List<PendingIntent>();
+        //            var deliveredIntents = new List<PendingIntent>();
+
+        //            // Create pending intents for each part
+        //            for (int i = 0; i < parts.Count; i++)
+        //            {
+        //                var sentIntent = CreateSentPendingIntent($"SMS_SENT_{i}");
+        //                var deliveredIntent = CreateDeliveredPendingIntent($"SMS_DELIVERED_{i}");
+        //                sentIntents.Add(sentIntent);
+        //                deliveredIntents.Add(deliveredIntent);
+        //            }
+
+        //            // Send multipart message
+        //            _smsManager.SendMultipartTextMessage(
+        //                phoneNumber,
+        //                null,
+        //                parts,
+        //                sentIntents.ToArray(),
+        //                deliveredIntents.ToArray());
+        //        }
+        //        else
+        //        {
+        //            // Send single message with delivery tracking
+        //            var sentIntent = CreateSentPendingIntent("SMS_SENT");
+        //            var deliveredIntent = CreateDeliveredPendingIntent("SMS_DELIVERED");
+
+        //            _smsManager.SendTextMessage(
+        //                phoneNumber,
+        //                null,
+        //                message,
+        //                sentIntent,
+        //                deliveredIntent);
+        //        }
+
+        //        _logger.LogInformation($"SMS sent to {phoneNumber}.");
+        //        return true;
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, $"Failed to send SMS to {phoneNumber}.");
+        //        return false;
+        //    }
+        //}
+
+        //private async Task<bool> CheckAndRequestSmsPermissionAsync()
+        //{
+        //    try
+        //    {
+        //        var status = await Permissions.CheckStatusAsync<Permissions.Sms>();
+        //        if (status != PermissionStatus.Granted)
+        //        {
+        //            status = await Permissions.RequestAsync<Permissions.Sms>();
+        //        }
+        //        return status == PermissionStatus.Granted;
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Failed to check or request SMS permission.");
+        //        return false;
+        //    }
+        //}
 
         private PendingIntent CreateSentPendingIntent(string action)
         {

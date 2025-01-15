@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.Maui.Controls;
@@ -9,6 +10,7 @@ using SyncOne.Services;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using SmsMessage = SyncOne.Models.SmsMessage;
+using Microsoft.Maui.ApplicationModel;
 
 namespace SyncOne.ViewModels
 {
@@ -20,16 +22,18 @@ namespace SyncOne.ViewModels
         private readonly ConfigurationService _configService;
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<MainViewModel> _logger;
-        private readonly SemaphoreSlim _processingLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _processingLock = new(1, 1);
         private bool _disposed;
 
-        private ObservableCollection<SmsMessage> _messages;
+        private ObservableCollection<SmsMessage> _messages = new();
+        private ObservableCollection<SmsMessage> _filteredMessages = new();
+        private string _searchQuery;
         private bool _isRefreshing;
         private bool _hasError;
         private string _errorMessage;
         private CancellationTokenSource _refreshCancellation;
 
-        public Command OpenSettingsCommand { get; }
+        public Command OpenSettingsCommand { get; } // Assuming this is initialized elsewhere
         public Command RefreshCommand { get; }
 
         public ObservableCollection<SmsMessage> Messages
@@ -39,8 +43,46 @@ namespace SyncOne.ViewModels
             {
                 if (_messages != value)
                 {
-                    _messages = value;
+                    if (_messages != null)
+                    {
+                        _messages.CollectionChanged -= Messages_CollectionChanged;
+                    }
+                    _messages = value ?? new ObservableCollection<SmsMessage>();
+                    _messages.CollectionChanged += Messages_CollectionChanged;
                     OnPropertyChanged();
+                    FilterMessages();
+                }
+            }
+        }
+
+        private void Messages_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            FilterMessages();
+        }
+
+        public ObservableCollection<SmsMessage> FilteredMessages
+        {
+            get => _filteredMessages;
+            private set
+            {
+                if (_filteredMessages != value)
+                {
+                    _filteredMessages = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string SearchQuery
+        {
+            get => _searchQuery;
+            set
+            {
+                if (_searchQuery != value)
+                {
+                    _searchQuery = value;
+                    OnPropertyChanged();
+                    FilterMessages();
                 }
             }
         }
@@ -100,15 +142,20 @@ namespace SyncOne.ViewModels
             _configService = configurationService ?? throw new ArgumentNullException(nameof(configurationService));
 
             _logger = _serviceProvider.GetService<ILogger<MainViewModel>>()
-                      ?? throw new InvalidOperationException("ILogger<MainViewModel> not found.");
+                ?? throw new InvalidOperationException("ILogger<MainViewModel> not found.");
 
-            _messages = new ObservableCollection<SmsMessage>();
             _refreshCancellation = new CancellationTokenSource();
 
-            RefreshCommand = new Command(async () => await RefreshMessagesAsync(), () => !IsRefreshing);
+            RefreshCommand = new Command(
+                async () => await RefreshMessagesAsync(),
+                () => !IsRefreshing
+            );
 
-            // Fire and forget initialization on a background thread
-            _ = Task.Run(InitializeAsync);
+            // Initialize on background thread
+            Task.Run(InitializeAsync).ContinueWith(
+                t => _logger.LogError(t.Exception, "Initialization failed"),
+                TaskContinuationOptions.OnlyOnFaulted
+            );
 
             _smsService.OnSmsReceived += HandleSmsReceived;
         }
@@ -146,36 +193,61 @@ namespace SyncOne.ViewModels
             {
                 try
                 {
-                    await ProcessIncomingSmsAsync(message);
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(_refreshCancellation.Token);
+                    await ProcessIncomingSmsAsync(message, cts.Token);
                 }
                 catch (Exception ex)
                 {
                     await HandleError("Failed to process incoming message", ex);
                 }
-            });
+            }).ContinueWith(
+                t => _logger.LogError(t.Exception, "Unhandled error in SMS processing"),
+                TaskContinuationOptions.OnlyOnFaulted
+            );
         }
 
         private async Task RefreshMessagesAsync()
         {
-            if (IsRefreshing) return;
+            if (IsRefreshing)
+            {
+                _logger.LogInformation("Refresh already in progress, skipping");
+                return;
+            }
 
             try
             {
-                _refreshCancellation?.Cancel();
-                _refreshCancellation = new CancellationTokenSource();
-                var token = _refreshCancellation.Token;
+                ErrorMessage = null;
+
+                var cts = new CancellationTokenSource();
+                var previousCts = Interlocked.Exchange(ref _refreshCancellation, cts);
+                previousCts?.Cancel();
+                previousCts?.Dispose();
 
                 IsRefreshing = true;
-                await LoadMessagesAsync();
+                _logger.LogInformation("Starting refresh operation");
+
+                await InitializeDatabaseAsync();
+
+                await LoadMessagesAsync(); // Directly await the async method
+
+                _logger.LogInformation("Refresh completed successfully");
                 ErrorMessage = null;
             }
             catch (OperationCanceledException)
             {
-                // Refresh was cancelled, ignore
+                _logger.LogInformation("Refresh operation was cancelled");
+            }
+            catch (TimeoutException)
+            {
+                var message = "Refresh operation timed out";
+                _logger.LogWarning(message);
+                await HandleError(message, new TimeoutException("The operation timed out"));
             }
             catch (Exception ex)
             {
-                await HandleError("Failed to refresh messages", ex);
+                var message = "Failed to refresh messages";
+                _logger.LogError(ex, message);
+                await HandleError(message, ex);
             }
             finally
             {
@@ -183,31 +255,102 @@ namespace SyncOne.ViewModels
             }
         }
 
-        private async Task ProcessIncomingSmsAsync(SmsMessage message)
+        private async Task LoadMessagesAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Loading messages from database");
+
+                var messages = await _databaseService.GetMessagesAsync();
+                if (messages == null)
+                {
+                    throw new InvalidOperationException("Database returned null messages collection");
+                }
+
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    if (_disposed) return;
+
+                    var orderedMessages = messages
+                        .OrderByDescending(m => m.ReceivedAt)
+                        .ToList();
+
+                    _logger.LogInformation($"Loading {orderedMessages.Count} messages into view");
+
+                    // Clear the existing collection and add new items
+                    Messages.Clear();
+                    foreach (var message in orderedMessages)
+                    {
+                        Messages.Add(message);
+                    }
+
+                    FilterMessages();
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load messages");
+                throw new InvalidOperationException("Failed to load messages", ex);
+            }
+        }
+
+        private void FilterMessages()
+        {
+            if (string.IsNullOrWhiteSpace(SearchQuery))
+            {
+                // If no search query, show all messages
+                FilteredMessages = new ObservableCollection<SmsMessage>(Messages);
+            }
+            else
+            {
+                // Filter messages based on the search query
+                var filtered = Messages
+                    .Where(m => m.From.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                                m.Body.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                FilteredMessages = new ObservableCollection<SmsMessage>(filtered);
+            }
+            OnPropertyChanged(nameof(FilteredMessages));
+        }
+
+        private async Task ProcessIncomingSmsAsync(SmsMessage message, CancellationToken cancellationToken)
         {
             if (message == null) throw new ArgumentNullException(nameof(message));
 
-            await _processingLock.WaitAsync();
+            await _processingLock.WaitAsync(cancellationToken);
             try
             {
                 if (!await _configService.IsPhoneNumberAllowedAsync(message.From))
                 {
                     await _configService.AddLogEntryAsync("SMS_FILTERED",
-                              $"Message from {message.From} was filtered out");
+                        $"Message from {message.From} was filtered out");
+                    return;
+                }
+                if (message.IsProcessing || message.IsProcessed)
+                {
+                    _logger.LogInformation("Skipping message {MessageId} (already being processed or processed)", message.Id);
                     return;
                 }
 
                 message.IsProcessing = true;
                 await _databaseService.SaveMessageAsync(message);
+                await AddOrUpdateMessageInCollectionAsync(message);
 
-                await AddMessageToCollectionAsync(message);
-
-                var apiResponse = await ProcessMessageWithRetryAsync(message);
-                if (apiResponse == null) return; // Processing failed or was cancelled
+                var apiResponse = await ProcessMessageWithRetryAsync(message, cancellationToken);
+                if (apiResponse == null)
+                {
+                    await HandleMessageError(message, new Exception("Failed to process message after retries"));
+                    return;
+                }
 
                 var sendSuccess = await SendSmsWithRetryAsync(message.From, apiResponse.Response);
                 await UpdateMessageStatusAsync(message, apiResponse, sendSuccess);
                 await LogProcessingResultAsync(message, sendSuccess);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation($"Processing of SMS from {message.From} cancelled.");
             }
             catch (Exception ex)
             {
@@ -219,134 +362,198 @@ namespace SyncOne.ViewModels
             }
         }
 
-        private async Task<ApiResponse> ProcessMessageWithRetryAsync(SmsMessage message)
+        private async Task<ApiResponse> ProcessMessageWithRetryAsync(SmsMessage message, CancellationToken cancellationToken)
         {
             const int maxRetries = 3;
+            Exception lastException = null;
+
             for (int i = 0; i < maxRetries; i++)
             {
                 try
                 {
-                    return await _apiService.ProcessMessageAsync(message.From, message.Body);
+                    var response = await _apiService.ProcessMessageAsync(message.From, message.Body);
+                    if (response != null)
+                    {
+                        return response;
+                    }
                 }
-                catch (Exception ex) when (i < maxRetries - 1)
+                catch (Exception ex)
                 {
-                    await _configService.AddLogEntryAsync("API_RETRY",
-                              $"Retrying API call for {message.From}, attempt {i + 2}/{maxRetries}");
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, i))); // Exponential backoff
+                    lastException = ex;
+                    if (i < maxRetries - 1)
+                    {
+                        await _configService.AddLogEntryAsync("API_RETRY",
+                            $"Retrying API call for {message.From}, attempt {i + 2}/{maxRetries}");
+                        await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, i)), cancellationToken);
+                    }
                 }
+            }
+
+            if (lastException != null)
+            {
+                _logger.LogError(lastException, "API processing failed after all retries");
             }
             return null;
         }
 
         private async Task<bool> SendSmsWithRetryAsync(string phoneNumber, string messageText)
         {
+            if (string.IsNullOrEmpty(phoneNumber) || string.IsNullOrEmpty(messageText))
+            {
+                _logger.LogError("Invalid SMS parameters: phone number or message is empty");
+                return false;
+            }
+
             const int maxRetries = 3;
             for (int i = 0; i < maxRetries; i++)
             {
                 try
                 {
+                    // Ensure permission is granted before sending SMS
+                    bool hasPermission = await MainThread.InvokeOnMainThreadAsync(async () =>
+                    {
+                        return await CheckAndRequestSmsPermissionAsync();
+                    });
+
+                    if (!hasPermission)
+                    {
+                        _logger.LogError("SMS permission not granted.");
+                        return false;
+                    }
+
                     var success = await _smsService.SendSmsAsync(phoneNumber, messageText);
                     if (success) return true;
 
                     if (i < maxRetries - 1)
                     {
-                        var delay = TimeSpan.FromSeconds(Math.Pow(2, i)); // Exponential backoff
+                        var delay = TimeSpan.FromSeconds(Math.Pow(2, i));
                         await _configService.AddLogEntryAsync("SMS_RETRY",
-                                  $"Retrying SMS send to {phoneNumber}, attempt {i + 2}/{maxRetries}");
+                            $"Retrying SMS send to {phoneNumber}, attempt {i + 2}/{maxRetries}");
                         await Task.Delay(delay);
                     }
                 }
-                catch (Exception ex) when (i < maxRetries - 1)
+                catch (Exception ex)
                 {
-                    await _configService.AddLogEntryAsync("SMS_ERROR",
-                              $"Error sending SMS to {phoneNumber}: {ex.Message}");
+                    _logger.LogError(ex, $"SMS send attempt {i + 1} failed");
+                    // Do not rethrow; log the error and return false
+                    return false;
                 }
             }
             return false;
         }
 
-        private async Task AddMessageToCollectionAsync(SmsMessage message)
-        {
-            if (_disposed) return;
-
-            await MainThread.InvokeOnMainThreadAsync(() =>
-            {
-                if (Messages != null && !_disposed)
-                {
-                    Messages.Insert(0, message);
-                }
-            });
-        }
-
-        private async Task UpdateMessageStatusAsync(SmsMessage message, ApiResponse apiResponse, bool sendSuccess)
-        {
-            message.Response = apiResponse.Response;
-            message.IsProcessed = true;
-            message.IsProcessing = false;
-            message.ProcessedAt = DateTime.UtcNow;
-            message.SendStatus = sendSuccess ? "Sent" : "Failed";
-
-            await _databaseService.SaveMessageAsync(message);
-
-            await MainThread.InvokeOnMainThreadAsync(() =>
-            {
-                if (Messages != null && !_disposed)
-                {
-                    var existingMessage = Messages.FirstOrDefault(m => m.Id == message.Id);
-                    if (existingMessage != null)
-                    {
-                        var index = Messages.IndexOf(existingMessage);
-                        Messages[index] = message;
-                    }
-                }
-            });
-        }
-
-        private async Task LogProcessingResultAsync(SmsMessage message, bool sendSuccess)
-        {
-            if (sendSuccess)
-            {
-                await _configService.AddLogEntryAsync("SMS_PROCESSED",
-                      $"Successfully processed and sent message to {message.From}");
-            }
-            else
-            {
-                await _configService.AddLogEntryAsync("SMS_SEND_FAILED",
-                      $"Failed to send SMS to {message.From}");
-            }
-        }
-
-        private async Task HandleMessageError(SmsMessage message, Exception ex)
-        {
-            message.IsProcessing = false;
-            message.SendStatus = "Error";
-
-            await _configService.AddLogEntryAsync("SMS_ERROR",
-                  $"Error processing message from {message.From}: {ex.Message}");
-
-            await HandleError($"Error processing message from {message.From}", ex);
-        }
-
-        private async Task LoadMessagesAsync()
+        private async Task<bool> CheckAndRequestSmsPermissionAsync()
         {
             try
             {
-                var messages = await _databaseService.GetMessagesAsync();
+                var status = await Permissions.CheckStatusAsync<Permissions.Sms>();
+                if (status != PermissionStatus.Granted)
+                {
+                    status = await Permissions.RequestAsync<Permissions.Sms>();
+                }
+                return status == PermissionStatus.Granted;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to check or request SMS permission.");
+                return false;
+            }
+        }
+
+        private async Task AddOrUpdateMessageInCollectionAsync(SmsMessage message)
+        {
+            if (_disposed || message == null) return;
+
+            try
+            {
                 await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    if (!_disposed)
+                    if (!_disposed && Messages != null)
                     {
-                        Messages.Clear();
-                        foreach (var message in messages.OrderByDescending(m => m.ReceivedAt))
+                        var existingMessage = Messages.FirstOrDefault(m => m.Id == message.Id);
+                        if (existingMessage != null)
                         {
-                            Messages.Add(message);
+                            // Update the existing message
+                            var index = Messages.IndexOf(existingMessage);
+                            Messages[index] = message; // This will notify the UI
+                        }
+                        else
+                        {
+                            // Add the new message
+                            Messages.Insert(0, message); // This will notify the UI
                         }
                     }
                 });
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to load messages", ex);
+                _logger.LogError(ex, "Failed to add/update message in collection");
+            }
+        }
+
+        private async Task UpdateMessageStatusAsync(SmsMessage message, ApiResponse apiResponse, bool sendSuccess)
+        {
+            if (message == null || apiResponse == null) return;
+
+            try
+            {
+                message.Response = apiResponse.Response;
+                message.IsProcessed = true;
+                message.IsProcessing = false;
+                message.ProcessedAt = DateTime.UtcNow;
+                message.SendStatus = sendSuccess ? "Sent" : "Failed";
+
+                await _databaseService.SaveMessageAsync(message);
+                await AddOrUpdateMessageInCollectionAsync(message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update message status");
+                throw; // Re-throw after logging
+            }
+        }
+
+        private async Task LogProcessingResultAsync(SmsMessage message, bool sendSuccess)
+        {
+            if (message == null) return;
+
+            try
+            {
+                if (sendSuccess)
+                {
+                    await _configService.AddLogEntryAsync("SMS_PROCESSED",
+                        $"Successfully processed and sent message to {message.From}");
+                }
+                else
+                {
+                    await _configService.AddLogEntryAsync("SMS_SEND_FAILED",
+                        $"Failed to send SMS to {message.From}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to log processing result");
+            }
+        }
+
+        private async Task HandleMessageError(SmsMessage message, Exception ex)
+        {
+            if (message == null) return;
+
+            try
+            {
+                message.IsProcessing = false;
+                message.SendStatus = "Error";
+
+                await _databaseService.SaveMessageAsync(message);
+                await _configService.AddLogEntryAsync("SMS_ERROR",
+                    $"Error processing message from {message.From}: {ex.Message}");
+
+                await HandleError($"Error processing message from {message.From}", ex);
+            }
+            catch (Exception loggingEx)
+            {
+                _logger.LogError(loggingEx, "Failed to handle message error");
             }
         }
 
@@ -354,15 +561,36 @@ namespace SyncOne.ViewModels
         {
             _logger.LogError(ex, message);
 
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            try
             {
-                if (!_disposed)
+                await MainThread.InvokeOnMainThreadAsync(() =>
                 {
-                    ErrorMessage = message;
-                }
-            });
+                    if (!_disposed)
+                    {
+                        ErrorMessage = $"{message}: {ex.Message}";
+                    }
+                });
 
-            await _configService.AddLogEntryAsync("ERROR", $"{message}: {ex.Message}");
+                await _configService.AddLogEntryAsync("ERROR", $"{message}: {ex.Message}");
+            }
+            catch (Exception loggingEx)
+            {
+                _logger.LogError(loggingEx, "Failed to handle error");
+            }
+        }
+
+        private void CleanupCancellationTokens()
+        {
+            try
+            {
+                _refreshCancellation?.Cancel();
+                _refreshCancellation?.Dispose();
+                _refreshCancellation = null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cleaning up cancellation tokens");
+            }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -385,9 +613,13 @@ namespace SyncOne.ViewModels
                 if (disposing)
                 {
                     _smsService.OnSmsReceived -= HandleSmsReceived;
-                    _refreshCancellation?.Cancel();
-                    _refreshCancellation?.Dispose();
+                    CleanupCancellationTokens();
                     _processingLock?.Dispose();
+                    if (Messages != null)
+                    {
+                        Messages.CollectionChanged -= Messages_CollectionChanged;
+                        Messages.Clear();
+                    }
                 }
                 _disposed = true;
             }

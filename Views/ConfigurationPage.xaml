@@ -3,16 +3,73 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:viewmodels="clr-namespace:SyncOne.ViewModels"
              xmlns:models="clr-namespace:SyncOne.Models"
+             xmlns:converters="clr-namespace:SyncOne.Converters"
              x:Class="SyncOne.Views.ConfigurationPage"
              x:DataType="viewmodels:ConfigurationViewModel"
              Title="Configuration">
 
     <ContentPage.Resources>
+        <!-- Validation Message Style -->
         <Style x:Key="ValidationMessageStyle" TargetType="Label">
-            <Setter Property="TextColor" Value="Red"/>
+            <Setter Property="TextColor" Value="{StaticResource Error}"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Margin" Value="4,0,0,0"/>
         </Style>
+
+        <!-- Button Style -->
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="BackgroundColor" Value="{StaticResource Primary}"/>
+            <Setter Property="TextColor" Value="{StaticResource White}"/>
+            <Setter Property="HeightRequest" Value="44"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="FontAttributes" Value="Bold"/>
+            <Setter Property="HorizontalOptions" Value="FillAndExpand"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="LineBreakMode" Value="WordWrap"/>
+            <Setter Property="Shadow">
+                <Setter.Value>
+                    <Shadow Brush="{StaticResource Primary}"
+                            Offset="0,4"
+                            Radius="8"
+                            Opacity="0.3"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="BackgroundColor" Value="{StaticResource Secondary}"/>
+            <Setter Property="TextColor" Value="{StaticResource White}"/>
+            <Setter Property="HeightRequest" Value="44"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="FontAttributes" Value="Bold"/>
+            <Setter Property="HorizontalOptions" Value="FillAndExpand"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="LineBreakMode" Value="WordWrap"/>
+            <Setter Property="Shadow">
+                <Setter.Value>
+                    <Shadow Brush="{StaticResource Secondary}"
+                            Offset="0,4"
+                            Radius="8"
+                            Opacity="0.3"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Disabled Button Style -->
+        <Style x:Key="DisabledButtonStyle" TargetType="Button">
+            <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray700}}"/>
+            <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"/>
+            <Setter Property="HeightRequest" Value="44"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="FontAttributes" Value="Bold"/>
+            <Setter Property="HorizontalOptions" Value="FillAndExpand"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="LineBreakMode" Value="WordWrap"/>
+            <Setter Property="IsEnabled" Value="False"/>
+        </Style>
+
+        <!-- Boolean-to-Inverse Boolean Converter -->
+        <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
     </ContentPage.Resources>
 
     <Grid>
@@ -44,15 +101,12 @@
 
                         <Button Text="Save Configuration" 
                                 Command="{Binding SaveConfigCommand}"
-                                BackgroundColor="{StaticResource Primary}"
-                                TextColor="White"
-                                HeightRequest="44"
-                                CornerRadius="8">
+                                Style="{StaticResource PrimaryButtonStyle}">
                             <Button.Triggers>
                                 <DataTrigger TargetType="Button"
                                             Binding="{Binding IsSaving}"
                                             Value="True">
-                                    <Setter Property="IsEnabled" Value="False"/>
+                                    <Setter Property="Style" Value="{StaticResource DisabledButtonStyle}"/>
                                 </DataTrigger>
                             </Button.Triggers>
                         </Button>
@@ -89,31 +143,23 @@
                         <HorizontalStackLayout Spacing="8">
                             <Button Text="Add to Allowlist" 
                                     Command="{Binding AddAllowedNumberCommand}"
-                                    BackgroundColor="{StaticResource Primary}"
-                                    TextColor="White"
-                                    HeightRequest="44"
-                                    HorizontalOptions="FillAndExpand"
-                                    CornerRadius="8">
+                                    Style="{StaticResource PrimaryButtonStyle}">
                                 <Button.Triggers>
                                     <DataTrigger TargetType="Button"
                                                 Binding="{Binding IsAddingNumber}"
                                                 Value="True">
-                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="Style" Value="{StaticResource DisabledButtonStyle}"/>
                                     </DataTrigger>
                                 </Button.Triggers>
                             </Button>
                             <Button Text="Add to Blocklist" 
                                     Command="{Binding AddBlockedNumberCommand}"
-                                    BackgroundColor="{StaticResource Secondary}"
-                                    TextColor="White"
-                                    HeightRequest="44"
-                                    HorizontalOptions="FillAndExpand"
-                                    CornerRadius="8">
+                                    Style="{StaticResource SecondaryButtonStyle}">
                                 <Button.Triggers>
                                     <DataTrigger TargetType="Button"
                                                 Binding="{Binding IsAddingNumber}"
                                                 Value="True">
-                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="Style" Value="{StaticResource DisabledButtonStyle}"/>
                                     </DataTrigger>
                                 </Button.Triggers>
                             </Button>
@@ -122,27 +168,27 @@
                         <!-- Allowed Numbers List -->
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Allowed Numbers" 
-                               FontSize="16" 
-                               FontAttributes="Bold"/>
+                                   FontSize="16" 
+                                   FontAttributes="Bold"/>
                             <CollectionView ItemsSource="{Binding AllowedNumbers}"
-                                      EmptyView="No allowed numbers added">
+                                           EmptyView="No allowed numbers added">
                                 <CollectionView.ItemTemplate>
                                     <DataTemplate x:DataType="models:PhoneNumberFilter">
                                         <SwipeView>
                                             <SwipeView.RightItems>
                                                 <SwipeItems>
                                                     <SwipeItem Text="Delete"
-                                                           BackgroundColor="Red"
-                                                           Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
-                                                           CommandParameter="{Binding .}"/>
+                                                               BackgroundColor="{StaticResource Error}"
+                                                               Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
+                                                               CommandParameter="{Binding .}"/>
                                                 </SwipeItems>
                                             </SwipeView.RightItems>
                                             <Border StrokeShape="RoundRectangle 6"
-                                                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
-                                                Margin="0,4"
-                                                Padding="12,8">
+                                                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
+                                                    Margin="0,4"
+                                                    Padding="12,8">
                                                 <Label Text="{Binding PhoneNumber}"
-                                                   VerticalOptions="Center"/>
+                                                       VerticalOptions="Center"/>
                                             </Border>
                                         </SwipeView>
                                     </DataTemplate>
@@ -153,27 +199,27 @@
                         <!-- Blocked Numbers List -->
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Blocked Numbers" 
-                               FontSize="16" 
-                               FontAttributes="Bold"/>
+                                   FontSize="16" 
+                                   FontAttributes="Bold"/>
                             <CollectionView ItemsSource="{Binding BlockedNumbers}"
-                                      EmptyView="No blocked numbers added">
+                                           EmptyView="No blocked numbers added">
                                 <CollectionView.ItemTemplate>
                                     <DataTemplate x:DataType="models:PhoneNumberFilter">
                                         <SwipeView>
                                             <SwipeView.RightItems>
                                                 <SwipeItems>
                                                     <SwipeItem Text="Delete"
-                                                           BackgroundColor="Red"
-                                                           Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
-                                                           CommandParameter="{Binding .}"/>
+                                                               BackgroundColor="{StaticResource Error}"
+                                                               Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:ConfigurationViewModel}}, Path=RemoveNumberCommand}"
+                                                               CommandParameter="{Binding .}"/>
                                                 </SwipeItems>
                                             </SwipeView.RightItems>
                                             <Border StrokeShape="RoundRectangle 6"
-                                                Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
-                                                Margin="0,4"
-                                                Padding="12,8">
+                                                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray700}}"
+                                                    Margin="0,4"
+                                                    Padding="12,8">
                                                 <Label Text="{Binding PhoneNumber}"
-                                                   VerticalOptions="Center"/>
+                                                       VerticalOptions="Center"/>
                                             </Border>
                                         </SwipeView>
                                     </DataTemplate>
@@ -183,6 +229,7 @@
                     </VerticalStackLayout>
                 </Border>
 
+                <!-- Background Service Card -->
                 <Border StrokeShape="RoundRectangle 8"
                         Stroke="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
                         BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray900}}"
@@ -192,22 +239,22 @@
                                FontSize="20"
                                FontAttributes="Bold" />
 
+                        <!-- Service Status Feedback -->
+                        <Label Text="{Binding ServiceStatusMessage}"
+                               FontSize="14"
+                               TextColor="{AppThemeBinding Light={StaticResource Gray700}, Dark={StaticResource Gray300}}"
+                               HorizontalOptions="Center" />
+
                         <HorizontalStackLayout Spacing="8">
                             <Button Text="Enable"
                                     Command="{Binding EnableBackgroundServiceCommand}"
-                                    BackgroundColor="{StaticResource Primary}"
-                                    TextColor="White"
-                                    HeightRequest="44"
-                                    HorizontalOptions="FillAndExpand"
-                                    CornerRadius="8" />
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    IsEnabled="{Binding IsServiceRunning, Converter={StaticResource InverseBooleanConverter}}" />
 
                             <Button Text="Disable"
                                     Command="{Binding DisableBackgroundServiceCommand}"
-                                    BackgroundColor="{StaticResource Secondary}"
-                                    TextColor="White"
-                                    HeightRequest="44"
-                                    HorizontalOptions="FillAndExpand"
-                                    CornerRadius="8" />
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    IsEnabled="{Binding IsServiceRunning}" />
                         </HorizontalStackLayout>
                     </VerticalStackLayout>
                 </Border>
@@ -216,11 +263,11 @@
 
         <!-- Loading Overlay -->
         <Grid IsVisible="{Binding IsLoading}"
-              BackgroundColor="#80000000">
+              BackgroundColor="{StaticResource Overlay}">
             <ActivityIndicator IsRunning="{Binding IsLoading}"
-                             HorizontalOptions="Center"
-                             VerticalOptions="Center"
-                             Color="{StaticResource Primary}"/>
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center"
+                               Color="{StaticResource Primary}"/>
         </Grid>
     </Grid>
 </ContentPage>

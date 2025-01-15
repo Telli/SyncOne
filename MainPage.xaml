@@ -42,7 +42,7 @@
         <!-- Response Style -->
         <Style x:Key="ResponseStyle" TargetType="Border">
             <Setter Property="StrokeShape" Value="RoundRectangle 12"/>
-            <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Gray50}, Dark={StaticResource Gray700}}"/>
+            <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray700}}"/>
             <Setter Property="Padding" Value="16"/>
             <Setter Property="Margin" Value="0,8,0,0"/>
             <Setter Property="Shadow">
@@ -56,7 +56,7 @@
         </Style>
     </ContentPage.Resources>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- Modern Header -->
         <Grid Grid.Row="0" 
               BackgroundColor="{StaticResource Primary}"
@@ -64,25 +64,34 @@
               ColumnDefinitions="*, Auto"
               Padding="20,0">
             <Label Text="Messages" 
-                   TextColor="White" 
+                   TextColor="{StaticResource White}" 
                    FontSize="24" 
                    FontAttributes="Bold"
                    VerticalOptions="Center"/>
             <Button Grid.Column="1"
                     Text="Settings"
-                    TextColor="White"
+                    TextColor="{StaticResource White}"
                     BackgroundColor="Transparent"
                     Clicked="OnSettingsClicked"
                     VerticalOptions="Center"
                     Margin="0,0,10,0"/>
         </Grid>
 
+        <!-- Search Bar -->
+        <SearchBar Grid.Row="1"
+                   Placeholder="Search messages..."
+                   Text="{Binding SearchQuery, Mode=TwoWay}"
+                   Margin="16,8"
+                   BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray800}}"
+                   TextColor="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource Gray100}}"
+                   CancelButtonColor="{AppThemeBinding Light={StaticResource Gray500}, Dark={StaticResource Gray400}}"/>
+
         <!-- Main Content -->
-        <RefreshView Grid.Row="1" 
+        <RefreshView Grid.Row="2" 
                      IsRefreshing="{Binding IsRefreshing}"
                      Command="{Binding RefreshCommand}">
-            <CollectionView ItemsSource="{Binding Messages}"
-                            EmptyView="No messages yet"
+            <CollectionView ItemsSource="{Binding FilteredMessages}"
+                            EmptyView="No messages found"
                             Margin="0,8">
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="models:SmsMessage">
@@ -131,13 +140,13 @@
         </RefreshView>
 
         <!-- Error Message -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 IsVisible="{Binding HasError}"
                 BackgroundColor="{StaticResource Error}"
                 Padding="16">
             <Label Text="{Binding ErrorMessage}"
-                   TextColor="White"
+                   TextColor="{StaticResource White}"
                    HorizontalOptions="Center"/>
         </Border>
     </Grid>
-</ContentPage> 
+</ContentPage>
