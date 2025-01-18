@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Flow Animation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .node {
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            text-align: center;
+            opacity: 0.5;
+            transform: scale(0.9);
+        }
+
+        .user-query {
+            background-color: #dbeafe;
+        }
+
+        .api {
+            background-color: #dcfce7;
+        }
+
+        .kernel {
+            background-color: #f3e8ff;
+        }
+
+        .parallel-nodes {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .vector-store {
+            background-color: #fef9c3;
+            flex: 1;
+        }
+
+        .llm {
+            background-color: #ffedd5;
+            flex: 1;
+        }
+
+        .response {
+            background-color: #e0f2fe;
+        }
+
+        .description {
+            text-align: center;
+            margin-top: 30px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- User Query -->
+        <div class="node user-query" id="userQuery">
+            User Query
+        </div>
+
+        <!-- API -->
+        <div class="node api" id="api">
+            ASP.NET Core API
+        </div>
+
+        <!-- Semantic Kernel -->
+        <div class="node kernel" id="kernel">
+            Semantic Kernel
+        </div>
+
+        <!-- Vector Store and LLM -->
+        <div class="parallel-nodes">
+            <div class="node vector-store" id="vectorStore">
+                Vector Store
+            </div>
+            <div class="node llm" id="llm">
+                Language Model
+            </div>
+        </div>
+
+        <!-- Response -->
+        <div class="node response" id="response">
+            Generated Response
+        </div>
+
+        <!-- Flow description -->
+        <div class="description">
+            <p>RAG Flow Process Animation</p>
+            <p style="font-size: 0.875rem; margin-top: 8px;">
+                Query → API → Semantic Kernel → Vector Store/LLM → Response
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Animation setup
+        function createAnimation() {
+            const tl = gsap.timeline({
+                repeat: -1,
+                defaults: { duration: 0.5, ease: "power2.inOut" }
+            });
+
+            // Initial state setup
+            gsap.set('.node', {
+                opacity: 0.5,
+                scale: 0.9
+            });
+
+            // Animation sequence
+            tl.to("#userQuery", {
+                opacity: 1,
+                scale: 1,
+                boxShadow: "0 0 20px rgba(59, 130, 246, 0.5)"
+            })
+            .to("#api", {
+                opacity: 1,
+                scale: 1,
+                boxShadow: "0 0 20px rgba(34, 197, 94, 0.5)"
+            })
+            .to("#kernel", {
+                opacity: 1,
+                scale: 1,
+                boxShadow: "0 0 20px rgba(168, 85, 247, 0.5)"
+            })
+            .to(["#vectorStore", "#llm"], {
+                opacity: 1,
+                scale: 1,
+                boxShadow: "0 0 20px rgba(234, 179, 8, 0.5)",
+                stagger: 0.3
+            })
+            .to("#response", {
+                opacity: 1,
+                scale: 1,
+                boxShadow: "0 0 20px rgba(14, 165, 233, 0.5)"
+            })
+            .to('.node', {
+                opacity: 0.5,
+                scale: 0.9,
+                boxShadow: "none",
+                duration: 1
+            });
+
+            return tl;
+        }
+
+        // Start animation when page loads
+        window.addEventListener('load', () => {
+            createAnimation();
+        });
+    </script>
+</body>
+</html>
