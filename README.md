@@ -1,64 +1,34 @@
 # SyncOne
 
-**SyncOne** is a modular and extensible application designed to manage SMS communication and processing in real-time. It supports seamless operation through a combination of background services and user interface integration, ensuring reliable messaging workflows. SyncOne is ideal for scenarios requiring message automation, real-time updates, and platform independence.
+**SyncOne** is a modular and extensible application designed to manage SMS communication and processing in real-time. Built with .NET MAUI, it supports seamless operation through background services and a robust architecture.
 
 ---
 
 ## Features
 
-- **Background Processing:**
-  - A robust foreground service (`SmsService`) processes SMS messages independently of the UI.
-  - Ensures messages are sent and processed even when the application is not active.
+- **Real-Time SMS Processing**:
+  - Background service (`SmsService`) ensures continuous SMS processing even when the app is closed.
+  - Retry mechanism for reliable SMS delivery with exponential backoff for failed attempts.
 
-- **Platform-Agnostic Design:**
-  - Uses `ISmsService` as an abstraction layer for SMS operations, enabling seamless integration across platforms.
-  - `AndroidSmsService` provides platform-specific implementation for Android.
+- **Platform-Agnostic Design**:
+  - Uses `ISmsService` as an abstraction layer for SMS operations, enabling cross-platform integration.
 
-- **Real-Time Updates:**
-  - The UI reflects real-time updates of received and processed messages via `MainViewModel`.
+- **Extensible Architecture**:
+  - Modular components like `DatabaseService`, `ApiService`, and `ConfigurationService` promote maintainability and scalability.
 
-- **Retry Mechanism:**
-  - Built-in retry logic ensures reliable SMS delivery with exponential backoff for failed attempts.
-
-- **Modular Architecture:**
-  - Components like `DatabaseService`, `ApiService`, and `ConfigurationService` encapsulate specific responsibilities, promoting maintainability.
-
----
-
-## Components
-
-### 1. **AndroidSmsService**
-- **Role:**
-  - Handles platform-specific SMS operations such as sending and receiving messages.
-  - Implements the `ISmsService` interface.
-- **Features:**
-  - Real-time SMS receiving using Android broadcast receivers.
-  - SMS delivery and sent status tracking using `PendingIntent`.
-
-### 2. **SmsService**
-- **Role:**
-  - Background service that ensures SMS processing continues even if the app is closed.
-- **Features:**
-  - Loads unprocessed messages from the database.
-  - Uses `ISmsService` for sending SMS.
-  - Implements a retry mechanism for failed message deliveries.
-
-### 3. **MainViewModel**
-- **Role:**
-  - Manages UI state and interactions.
-- **Features:**
-  - Binds to the message list, reflecting real-time updates from `AndroidSmsService`.
-  - Exposes commands like refresh to reload messages from the database.
+- **Intelligent Integration**:
+  - Supports Language Models (LLMs) for intelligent SMS-based interactions, such as AI assistants, language translation, and more.
 
 ---
 
 ## Prerequisites
 
-1. **Android Development Environment:**
-   - Android Studio or equivalent IDE.
-   - Android SDK.
+1. **Development Environment**:
+   - Visual Studio 2022 or later with the MAUI workload.
+   - .NET 8.0 SDK or later.
+   - Android SDK (API level 21 or higher).
 
-2. **Permissions:**
+2. **Permissions** (for Android):
    - Add the following permissions to `AndroidManifest.xml`:
      ```xml
      <uses-permission android:name="android.permission.SEND_SMS"/>
@@ -66,16 +36,16 @@
      <uses-permission android:name="android.permission.READ_SMS"/>
      ```
 
-3. **Dependency Injection:**
+3. **Dependency Injection**:
    - Ensure DI setup (e.g., Microsoft.Extensions.DependencyInjection) for services like `ISmsService`.
 
 ---
 
 ## Setup and Installation
 
-1. **Clone the Repository:**
+1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/yourusername/SyncOne.git
+   git clone https://github.com/Telli/SyncOne.git
    ```
 
 2. **Open the Project:**
